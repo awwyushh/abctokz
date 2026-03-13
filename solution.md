@@ -427,6 +427,74 @@ Task 9 puts numbers behind Task 8 observations:
 - with adequate vocabulary, model differences narrow for short high-frequency Devanagari phrases.
 
 ---
+## Task 10
+
+### The Compression Trade-off
+
+Tokenizer “compression” means producing fewer tokens for the same text — i.e. **lower fertility**. Intuitively that seems better (shorter sequences, less compute). But the same levers that improve compression often worsen other metrics. This task finds configuration changes that improve one metric while making another worse, and articulates the tension.
+
+Run the experiment:
+
+```bash
+uv run python tasks/task10.py
+```
+
+![Task 10 Results](tasks/task10.png)
+
+Report path: `outputs/task10/report.json`.
+
+### Configuration changes and what was measured
+
+The script varies three BPE knobs and measures **fertility**, **unk_rate**, **round_trip_success_rate**, **artifact size (KiB)**, and **throughput (sentences/sec)** where relevant.
+
+1. **vocab_size** (1000, 3000, 8000) on an English-heavy corpus  
+2. **min_frequency** (1, 2, 5) on a mixed English + Devanagari corpus  
+3. **limit_alphabet** (60, 120, None) on the mixed corpus  
+
+### What improved vs what got worse
+
+#### Trade-off 1: vocab_size
+
+- **Intended tension:** Larger vocab_size → more merges → **lower fertility** (better compression) but **larger artifact** and potentially slower encode (more lookups).
+- **In this run:** With a modest-sized corpus, BPE runs out of mergeable pairs before filling 8000 vocab, so fertility and artifact size were similar across 1000 / 3000 / 8000. So we did **not** see one config dominate; we saw that **on a larger or noisier corpus**, increasing vocab_size would improve compression at the cost of artifact size and possibly throughput — a real design trade-off for resource-constrained or latency-sensitive systems.
+
+#### Trade-off 2: min_frequency
+
+- **Intended tension:** **Lower** min_frequency → more rare words kept in training → more possible merges → **lower fertility**. **Higher** min_frequency → fewer rare words → more conservative merges → potentially **better round-trip** and robustness (fewer spurious merges on noise).
+- **In this run:** On the mixed corpus, fertility and round-trip were identical for min_frequency 1, 2, and 5. So no clear winner; the trade-off is **conceptual**: in corpora with many hapax legomena or typos, lowering min_frequency improves compression but can hurt stability; raising it does the opposite.
+
+#### Trade-off 3: limit_alphabet (concrete trade-off)
+
+- **Configuration:** BPE with `limit_alphabet=60` vs `120` vs `None` (vocab_size=2000, min_frequency=2), evaluated on mixed English + Devanagari test sentences.
+
+| limit_alphabet | fertility | unk_rate | round_trip_success_rate | artifact (KiB) |
+|----------------|-----------|----------|-------------------------|----------------|
+| 60             | 4.00      | 0.0208   | 0.80                    | 20.5           |
+| 120            | 4.00      | 0.0000   | 1.00                    | 20.7           |
+| None           | 4.00      | 0.0000   | 1.00                    | 20.7           |
+
+- **What improved with smaller limit (60):** Slightly **smaller artifact** (20.5 vs 20.7 KiB).
+- **What got worse:** **Higher UNK rate** (2.08% vs 0%) and **lower round-trip success** (80% vs 100%). Dropping rare characters from the initial alphabet causes those characters (and segments using them) to be encoded as UNK or split in a way that does not round-trip.
+
+So: **limit_alphabet=60** improves artifact size (and in principle load time / memory) but worsens coverage and round-trip on mixed-script text. That is a true trade-off, not one configuration dominating the other.
+
+### Is there a true trade-off, or does one config dominate?
+
+- **limit_alphabet:** **True trade-off.** Smaller limit → better footprint/speed, worse UNK and round-trip. No single choice is best for every deployment.
+- **vocab_size:** True trade-off **in the large**: larger vocab improves compression but increases artifact size and can reduce throughput; on our small corpus we did not see divergence.
+- **min_frequency:** True trade-off **in principle**: lower → better compression, higher → more robustness; our runs did not show a difference on the chosen corpus.
+
+### Would you make this change in production?
+
+- **Increasing vocab_size for better compression:** Yes, **if** you have enough data to fill the vocab and you can afford the larger artifact and slightly higher latency. For production NLP services, 4k–8k BPE vocab is common; going to 16k+ is a conscious trade-off for compression vs memory and speed.
+- **Lowering min_frequency to improve compression:** Only with care. On clean, curated data it can help; on noisy or user-generated text it can create spurious merges and hurt round-trip or downstream quality. I would keep min_frequency at 2 or higher unless there is a clear need and evaluation on held-out data.
+- **Lowering limit_alphabet to save artifact size:** Only if the deployment is **script-restricted** (e.g. English-only or a single script). For multilingual or mixed-script production (e.g. English + Devanagari), I would **not** use a tight limit; the UNK and round-trip cost are too high. If the system is English-only and artifact size is critical, a moderate limit (e.g. 80–100) can be acceptable.
+
+### Takeaway
+
+Compression (lower fertility) is not free: it trades off against **artifact size**, **throughput**, **UNK rate**, and **round-trip reliability**. The most visible trade-off in this codebase is **limit_alphabet**: smaller alphabet improves size/speed and worsens coverage and round-trip on mixed-script text. Production choices should align with script coverage, latency, and memory constraints rather than optimizing fertility alone.
+
+---
 ## Task 11
 
 ### Can You Trust the Benchmark Numbers?
