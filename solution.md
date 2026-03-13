@@ -146,8 +146,75 @@ The blur appears in **artifact reconstruction vs full pipeline abstraction**. Th
 This would make module boundaries fully consistent with the intended architecture and improve reproducibility.
 
 ---
+## Task 3
 
+
+
+
+---
 ## Task 14
+
+### The National Anthem Test
+
+For this task, we used the first stanza of **Jana Gana Mana** in two forms:
+
+- English transliteration
+- Devanagari script
+
+We trained a tokenizer and encoded both versions using:
+
+```bash
+uv run python task3.py
+```
+
+Model used in this run: **BPE**  
+Tokenizer source used for analysis: **trained**
+
+### Raw results (abctokz)
+
+| Version | Words | Tokens | Fertility (tokens ÷ words) |
+|---|---:|---:|---:|
+| Transliteration | 55 | 180 | 3.273 |
+| Devanagari | 54 | 123 | 2.278 |
+
+Sample tokenization excerpts:
+
+- Transliteration sample tokens:  
+  `[Ja, ##na, G, ##an, ##a, M, ##an, ##a, A, ##dh, ##i, ##na, ##ya, ##ka, Ja, ##ya, He, B, ##ha, ##r, ##at, ##a, B, ##ha, ##g]`
+
+- Devanagari sample tokens:  
+  `[जन, गण, मन, अ, ##धि, ##ना, ##यक, जय, हे, भ, ##ार, ##त, भ, ##ाग, ##्य, वि, ##ध, ##ा, ##ता, प, ##ंज, ##ा, ##ब, स, ##ि]`
+
+### Interpretation
+
+In this run, **transliteration produced more tokens** than Devanagari (180 vs 123), and therefore had higher fertility (3.273 vs 2.278).
+
+This difference is not caused by script alone. It comes from a combination of:
+
+1. **Script-level symbol patterns** (how character sequences appear and repeat),
+2. **Learned vocabulary coverage** of frequent fragments,
+3. **Training corpus composition** (which forms and spellings were frequent),
+4. **Model family behavior** (BPE merge strategy in this case).
+
+So the outcome is a joint effect of script + data + tokenizer objective.
+
+### Bonus: external tokenizer comparison (`tiktoken`)
+
+The same two texts were tested with `tiktoken` (`cl100k_base`):
+
+| Version | Words | Tokens | Fertility |
+|---|---:|---:|---:|
+| Transliteration | 55 | 115 | 2.091 |
+| Devanagari | 54 | 268 | 4.963 |
+
+### What this reveals
+
+- `abctokz` BPE (trained on the provided corpus) favored Devanagari more than transliteration for this sample.
+- `tiktoken` (general-purpose, externally pretrained) produced the opposite pattern: very high token count for Devanagari.
+
+This reveals a key practical point: **fertility is highly tokenizer-dependent**. A domain/script-aware tokenizer trained on relevant data can be much more token-efficient for that script than a generic external tokenizer.
+
+Report saved at: `outputs/task3/report.json`
 
 ### How difficult is adding a fourth model?
 
