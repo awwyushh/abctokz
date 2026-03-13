@@ -78,6 +78,7 @@ class AugenblickTokenizer:
         post_processor: Optional[PostProcessor] = None,
         decoder: Optional[Decoder] = None,
         special_tokens: Optional[dict[str, SpecialToken]] = None,
+        tokenizer_config: Optional[TokenizerConfig] = None,
     ) -> None:
         self._model = model
         self._normalizer = normalizer
@@ -85,6 +86,7 @@ class AugenblickTokenizer:
         self._post_processor = post_processor
         self._decoder = decoder or WordDecoder()
         self._special_tokens: dict[str, SpecialToken] = special_tokens or {}
+        self._tokenizer_config = tokenizer_config
 
     # ------------------------------------------------------------------
     # Encoding
@@ -127,14 +129,41 @@ class AugenblickTokenizer:
 
             pairs = self._model.tokenize(pre_tok)
             char_offset = start_pos
-            for tok_str, tok_id in pairs:
-                tok_len = len(tok_str.lstrip("##"))  # strip continuation prefix for offset
+            pre_tok_end = start_pos + len(pre_tok)
+
+            def _piece_len(token_str: str) -> int:
+                if token_str.startswith("<") and token_str.endswith(">"):
+                    return 0
+                return len(token_str.lstrip("##"))
+
+            raw_lens = [_piece_len(tok_str) for tok_str, _ in pairs]
+            total_raw = sum(raw_lens)
+            target = len(pre_tok)
+
+            if raw_lens:
+                if total_raw == 0:
+                    lens = [0] * len(raw_lens)
+                    lens[-1] = target
+                else:
+                    lens = raw_lens[:]
+                    lens[-1] += target - total_raw
+                    if lens[-1] < 0:
+                        lens[-1] = 0
+            else:
+                lens = []
+
+            for (tok_str, tok_id), tok_len in zip(pairs, lens):
                 ids.append(tok_id)
                 tokens.append(tok_str)
-                offsets.append((char_offset, char_offset + len(pre_tok)))
+                end_offset = min(pre_tok_end, char_offset + tok_len)
+                offsets.append((char_offset, end_offset))
                 is_special = int(tok_str in self._special_tokens)
                 special_mask.append(is_special)
                 attention_mask.append(1)
+                char_offset = end_offset
+
+            if pairs and offsets and offsets[-1][1] < pre_tok_end:
+                offsets[-1] = (offsets[-1][0], pre_tok_end)
 
             cursor = start_pos + len(pre_tok)
 
@@ -260,6 +289,7 @@ class AugenblickTokenizer:
             pretokenizer=pretokenizer,
             post_processor=post_processor,
             decoder=decoder,
+            tokenizer_config=config,
         )
 
     def train(self, corpus_paths: list[str], config: TokenizerConfig) -> None:
@@ -300,6 +330,7 @@ class AugenblickTokenizer:
                         yield line
 
         self._model = trainer.train(_corpus_iter())
+        self._tokenizer_config = config
         # Rebuild decoder for the new model type
         if config.model.type == "wordlevel":
             self._decoder = WordDecoder()
@@ -336,9 +367,13 @@ class AugenblickTokenizer:
         save_json(st_data, out / SPECIAL_TOKENS_FILENAME)
 
         # Save config (if available)
-        # We reconstruct a minimal config dict from what we know
         model_type = self._infer_model_type()
-        config_data: dict[str, object] = {"model_type": model_type, "schema_version": SCHEMA_VERSION}
+        config_data: dict[str, object] = {
+            "model_type": model_type,
+            "schema_version": SCHEMA_VERSION,
+        }
+        if self._tokenizer_config is not None:
+            config_data["tokenizer_config"] = self._tokenizer_config.model_dump()
         save_json(config_data, out / CONFIG_FILENAME)
 
         # Save manifest
@@ -399,6 +434,25 @@ class AugenblickTokenizer:
         else:
             raise SerializationError(f"Unknown model_type: {model_type!r}")
 
+        # Try to restore full pipeline config if present
+        normalizer = None
+        pretokenizer = None
+        post_processor = None
+        tok_cfg: TokenizerConfig | None = None
+        cfg_path = p / CONFIG_FILENAME
+        if cfg_path.exists():
+            cfg_data = load_json(cfg_path)
+            raw_cfg = cfg_data.get("tokenizer_config") if isinstance(cfg_data, dict) else None
+            if isinstance(raw_cfg, dict):
+                try:
+                    tok_cfg = TokenizerConfig(**raw_cfg)
+                    shell = cls.from_config(tok_cfg)
+                    normalizer = shell._normalizer
+                    pretokenizer = shell._pretokenizer
+                    post_processor = shell._post_processor
+                except Exception:
+                    tok_cfg = None
+
         # Load special tokens if present
         st_path = p / SPECIAL_TOKENS_FILENAME
         special_tokens: dict[str, SpecialToken] = {}
@@ -407,7 +461,15 @@ class AugenblickTokenizer:
             special_tokens = {k: SpecialToken.from_dict(v) for k, v in st_data.items()}
 
         logger.info("Tokenizer loaded from %s (%s, vocab=%d)", path, model_type, meta.vocab_size)
-        return cls(model=model, decoder=decoder, special_tokens=special_tokens)
+        return cls(
+            model=model,
+            normalizer=normalizer,
+            pretokenizer=pretokenizer,
+            post_processor=post_processor,
+            decoder=decoder,
+            special_tokens=special_tokens,
+            tokenizer_config=tok_cfg,
+        )
 
     # ------------------------------------------------------------------
     # Internals
