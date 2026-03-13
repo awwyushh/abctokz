@@ -48,22 +48,61 @@ So we added `BenchmarkRunner._build_language_batches()` to benchmark each tokeni
 
 ### Studying the Mantra
 
-So to understand this we wrote a small script altering the predefined example file train_bpe.py, 
-The corpus has mixed Hindi English and Marathi Language
-Okay so upon running this we get a series of almost 76 tokens
-<img width="1014" height="191" alt="image" src="https://github.com/user-attachments/assets/c5a697a9-c322-4ca8-b519-773ff1b8884a" />
+To understand how the tokenizer behaves, we wrote a small script by modifying the predefined example file `train_bpe.py`.  
+The training corpus contained a **mix of Hindi, English, and Marathi text**.
 
-- From our understanding of the codebase, when encode() is called we first enter tokenizer.py, inside the AugenblickTokenizer class. The tokenizer runs a sequential pipeline: Normalization → Pre-tokenization → Modeling → Post-processing
+After running the script, the tokenizer produced **approximately 76 tokens** for the input example.
 
-- First comes normalization. The tokenizer applies devanagari normalization (NFC) to standardize the text. Since our input was entirely in Devanagari, the string mostly remained unchanged after this step.
-Next is pre-tokenization. The WhitespacePreTokenizer splits the normalized text wherever there are spaces or newline characters, breaking the sentence into word-like segments.
+<img width="1014" height="191" alt="Tokenization output" src="https://github.com/user-attachments/assets/c5a697a9-c322-4ca8-b519-773ff1b8884a" />
 
-- After that, the text goes to the BPE model. BPE is a subword tokenizer that initially breaks words into smaller units and then merges frequently occurring character pairs to form common subwords. Over time, repeated patterns become their own tokens.
-Once the subwords are identified, the tokenizer looks them up in the vocabulary table and converts each one into its corresponding integer ID. This list of IDs is the final encoded output.
+### Tokenization Pipeline
 
-- For decoding, the SubwordDecoder reverses the process. It takes the token IDs, maps them back to their subwords using the vocabulary, and reconstructs the text while handling special tokens.
+From our reading of the codebase, calling `encode()` enters `tokenizer.py`, specifically the `AugenblickTokenizer` class.  
+The tokenizer processes text through the following **sequential pipeline**:
 
-- One thing we noticed during testing was the presence of multiple 0 tokens, which seem to represent unknown tokens. Because of this, the decoded text differed noticeably from the original input, suggesting that parts of the Devanagari text were not present in the trained vocabulary.
+Normalization → Pre-tokenization → Modeling → Post-processing
+
+#### 1. Normalization
+
+The first stage applies **Devanagari normalization (NFC)** to standardize the text representation.
+
+Since our input consisted entirely of Devanagari characters, the normalized string remained **almost identical to the original input**, as no canonical transformations were necessary.
+
+#### 2. Pre-tokenization
+
+Next, the `WhitespacePreTokenizer` splits the normalized text wherever **spaces or newline characters** appear.  
+This stage breaks the sentence into **word-like segments**, which become the input units for the model.
+
+#### 3. Modeling (BPE)
+
+The segmented text is then passed to the **BPE (Byte Pair Encoding) model**.
+
+BPE works by:
+
+1. Initially splitting words into smaller character-level units.
+2. Iteratively merging frequently occurring character pairs.
+3. Forming commonly occurring **subword tokens** over time.
+
+After subwords are identified, the tokenizer **maps each token to its corresponding integer ID** using the learned vocabulary.  
+The resulting list of IDs forms the **encoded representation** of the input text.
+
+#### 4. Decoding
+
+During decoding, the `SubwordDecoder` reverses the process:
+
+- Token IDs are mapped back to their corresponding tokens.
+- Subwords are merged appropriately.
+- Special tokens and formatting rules are handled to reconstruct readable text.
+
+### Observation: Unknown Tokens
+
+During testing, we noticed the presence of **multiple `0` tokens** in the encoded output.
+
+These appear to represent **unknown tokens (`<unk>`)**.  
+Because some Devanagari fragments were not present in the trained vocabulary, they were replaced by `<unk>` tokens.
+
+As a result, the **decoded text differed from the original input**, indicating that parts of the input text were outside the tokenizer's learned vocabulary.
+
 
 ---
 
