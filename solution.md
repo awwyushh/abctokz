@@ -48,8 +48,24 @@ So we added `BenchmarkRunner._build_language_batches()` to benchmark each tokeni
 
 ### Studying the Mantra
 
-Now we wanted to trace the full tokenization process for the Sanskrit mantra using the BPE model.
-The pipeline has four stages (as mentioned in the task description).
+So to understand this we wrote a small script altering the predefined example file train_bpe.py, 
+The corpus has mixed Hindi English and Marathi Language
+Okay so upon running this we get a series of almost 76 tokens
+<img width="1014" height="191" alt="image" src="https://github.com/user-attachments/assets/c5a697a9-c322-4ca8-b519-773ff1b8884a" />
+
+- so our understanding is that from when the encode is run we first land at tokeniser.py file(class AugenblickTokenizer) here the sequential pipeline is run **Normalization -> Pre-tokenization -> Modeling -> Post-processing** 
+
+- here after teh normalisation includes the unicode normalisation file i.e NFKC text
+for such fully Devangari sequence it will basically remain unchanged
+in the pretokenisation, coming out from the whitespavepretokenizer it will be split at places of newline and whitespace characters. 
+
+- next would be the BPE model. So this is basically a subword splitting tokeniser, its gonna break down incoming text to near individual tokens and then start grouping subwords according to which subwords are repeated, It gives the tokens that reapeat frequently a new token recursively while its exhausted.
+
+- then the final step in the encoding, it looks up the vocabulary table to , turn each and every subwords to individual ids.
+
+- The decoding back to string is dont by the subwordDecoder, it taked the integer ids and converts them back to the subwords from the vocabulary table, and the special charecters are substituted. 
+
+- An observation here was that there were a bunch of 0s inside signifying unknown tokens and there was a stark difference in the original text and the final decoded text.
 
 ---
 
