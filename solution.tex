@@ -23,6 +23,39 @@ We define a new term here for further learnings. \\ \\
 Okay,  simple. So what? We understand that words can be assigned some number, in context by providing a map of each word to a specific number or real. \\  \\
 But rather, the general trend that helps us in matter of applications, is another definition that is used in practise where the representation is a real-valued vector that encodes the meaning of the word in such a way that the words that are closer in the vector space are expected to be similar in meaning. \\ \\
 Now, generation of these mappings is rather not that convincingly easy. \\
-Okay you got us, it is Maths again here. We use techniques like neural networks, dimensionality reduction on the word co-occurrence matrix, probabilistic models, explainable knowledge base method, and explicit representation in terms of the context in which words appear.
+Okay you got us, it is Maths again here. We use techniques like neural networks, dimensionality reduction on the word co-occurrence matrix, probabilistic models, explainable knowledge base method, and explicit representation in terms of the context in which words appear. \cite{wiki_embedding}
+
+% ---------------------------------------------------------------
+\section{Understanding of Codebase}
+
+\subsection{Environment Setup}
+We observed presence of pyproject.toml, so it was pretty easy to just basically \textit{uv sync}.
+It setup all the dependencies properly, and got the cli working.
+Verified it via \textit{uv run abctokz --help}.
+
+
+\subsection{Benchmarking}
+
+
+
+\textbf{Bug: } We observed while benchmarking that the results only showed benchmarks for the 'en' and not 'hi'. \\
+\textbf{Fix: } We fixed it by changing eval/benchmark.py. Firsly benchmark output was incorrectly reporting only \textit{en} because language was hardcoded to \textit{cfg.languages[0]}.
+So we added \textit{$BenchmarkRunner.\_build\_language\_batches()$} to benchmark each tokenizer \textbf{per language batch} instead of always using only the first language tag. Also changed \textit{$BenchmarkRunner.run()$} to suit the added language batching.
+
+\begin{verbatim}
+
+\end{verbatim}
+
+% ---------------------------------------------------------------
+
+\begin{thebibliography}{9}
+
+\bibitem{wiki_embedding}
+Wikipedia contributors,
+\textit{Word embedding},
+Wikipedia, The Free Encyclopedia.
+https://en.wikipedia.org/wiki/Word\_embedding
+
+\end{thebibliography}
 
 \end{document}
