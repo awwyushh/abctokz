@@ -179,7 +179,7 @@ uv run python task3.py
 
 Model used in this run: **BPE**  
 
-![Task 3 Raw results](task3.png)
+![Task 3 Raw results](tasks/task3.png)
 
 ### Raw results (abctokz)
 
@@ -238,7 +238,7 @@ For this task, I created and ran a dedicated experiment script:
 uv run python task6.py
 ```
 
-![Task 6 Results](task6.png)
+![Task 6 Results](tasks/task6.png)
 
 The script trains all 3 model families on an **English-only corpus**, then probes difficult inputs:
 
