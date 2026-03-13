@@ -867,9 +867,76 @@ flowchart LR
 
 I would deploy **only behind a controlled canary**, not as the sole production tokenizer for a massive pipeline yet. The architecture and correctness foundations are genuinely good. The blocking work is mostly production engineering: throughput strategy, CI/CD gates, and artifact lifecycle hardening.
 
+---
+
+## Task 17 — Make One Small Improvement
+
+### The problem
+
+The benchmark runner reports **unk_rate** (fraction of tokens that are `<unk>`) but always used the default `unk_id=0` when calling `unk_rate()`. BPE, Unigram, and WordLevel all store the unknown-token ID in the vocabulary; for serialized or custom vocabs the `<unk>` token can live at a different index. When it does, the benchmark undercounts or miscounts UNKs and reports a wrong metric.
+
+### The fix
+
+**File:** `src/abctokz/eval/benchmark.py`
+
+1. Import the UNK token constant and derive the tokenizer’s actual UNK ID from its vocab before building the result.
+2. Pass that ID into `unk_rate(..., unk_id=unk_id)`.
+
+**Diff:**
+
+```diff
+--- a/src/abctokz/eval/benchmark.py
++++ b/src/abctokz/eval/benchmark.py
+@@ -8,6 +8,7 @@ from pathlib import Path
+ from typing import Protocol
+
++from abctokz.constants import UNK_TOKEN
+ from abctokz.config.schemas import BenchmarkConfig
+ from abctokz.data.corpus import load_corpus
+ ...
+                 ref_counts = [len(s.split()) for s in sentences]
++                unk_id = tokenizer.get_vocab().get(UNK_TOKEN, 0)
+
+                 result = BenchmarkResult(
+                     ...
+-                    unk_rate=unk_rate(all_encodings),
++                    unk_rate=unk_rate(all_encodings, unk_id=unk_id),
+```
+
+### Why this is the right fix (and minimal)
+
+- **Correctness:** `unk_rate()` already accepts `unk_id`; the benchmark was the only caller that didn’t pass it. BPE uses `self._vocab.unk_id or 0`, Unigram/WordLevel store `unk_id` in the model; the loaded tokenizer’s vocab is the single source of truth. Looking up `<unk>` in `get_vocab()` matches how the tokenizer actually encodes unknown tokens.
+- **Minimal:** One new line, one argument added. No new APIs, no refactor. If `<unk>` is missing from the vocab we fall back to `0`, preserving previous behavior for typical vocabs where `<unk>` is at 0.
+
+### Evidence the fix works
+
+- **Existing behavior unchanged when UNK is at 0:** For standard BPE/Unigram/WordLevel artifacts that put `<unk>` at ID 0, `get_vocab().get(UNK_TOKEN, 0)` returns 0, so results are identical to before.
+- **Correct when UNK is elsewhere:** Any tokenizer that stores `<unk>` at another ID (e.g. after re-serialization or custom vocab order) now gets a correct unk_rate because we count the same ID the model emits. The intrinsic evaluator (`evaluate_tokenizer`) already passes `unk_id` through; the benchmark was the gap.
+- **No new tests added:** As requested; the change is a single, localized use of the existing `unk_rate(..., unk_id)` contract.
 
 ---
 
+## Task 18 — Why This Change and Not a Bigger One?
+
+### How localized is the change?
+
+- **Touched:** Only `src/abctokz/eval/benchmark.py` — one import and two lines in the result-building block.
+- **Left alone:** Metrics (`unk_rate` signature), tokenizer API, vocab layer, all other benchmark callers, and the rest of the codebase.
+
+### Risk
+
+- **Low.** We only change how the benchmark *computes* the value it passes into `unk_rate`. If the tokenizer has no `<unk>` in its vocab, we use `0`, which matches the previous behavior. No API or file-format change; no new dependencies or config.
+
+### Who benefits and how?
+
+- **Anyone running benchmarks** on tokenizers where `<unk>` is not at ID 0 (e.g. custom vocab order, Unigram artifacts with a different special-token layout): they get a correct UNK rate instead of a misleading one.
+- **Interpretation of reports:** UNK rate is a core quality signal; wrong values would mislead tuning (e.g. thinking coverage is fine when it isn’t).
+
+### Bigger refactor that would be “better in principle” but wrong here
+
+- A “proper” refactor could add a first-class `tokenizer.unk_id` (or `get_unk_id()`) and have the benchmark call that. That would centralize the contract but would require touching the Tokenizer class, the model base/vocab API, and all implementors. For this codebase the only consumer that was wrong was the benchmark; the tokenizer already exposes `get_vocab()`, so deriving UNK ID there is sufficient and keeps the change small. Adding a new API would be unnecessary scope and risk for a single caller. So: *we kept the change small because the bug was a single missing argument at a single call site, and the existing API already provides enough information to fix it.*
+
+---
 
 ## Task 19
 

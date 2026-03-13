@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Protocol
 
+from abctokz.constants import UNK_TOKEN
 from abctokz.config.schemas import BenchmarkConfig
 from abctokz.data.corpus import load_corpus
 from abctokz.data.sampling import sample_lines
@@ -116,6 +117,7 @@ class BenchmarkRunner:
                 avg_elapsed = total_elapsed / cfg.timed_runs
                 decoded = [tokenizer.decode(enc.ids) for enc in all_encodings]
                 ref_counts = [len(s.split()) for s in sentences]
+                unk_id = tokenizer.get_vocab().get(UNK_TOKEN, 0)
 
                 result = BenchmarkResult(
                     tokenizer_name=name,
@@ -124,7 +126,7 @@ class BenchmarkRunner:
                     throughput_sps=len(sentences) / max(avg_elapsed, 1e-9),
                     mean_tokens_per_sentence=mean_tokens_per_sentence(all_encodings),
                     fertility=fertility(all_encodings, ref_counts),
-                    unk_rate=unk_rate(all_encodings),
+                    unk_rate=unk_rate(all_encodings, unk_id=unk_id),
                     round_trip_success_rate=round_trip_success_rate(sentences, decoded),
                     normalized_seq_length_ratio=normalized_seq_length_ratio(all_encodings, sentences),
                     elapsed_seconds=avg_elapsed,
