@@ -55,7 +55,7 @@ Okay so upon running this we get a series of almost 76 tokens
 
 - From our understanding of the codebase, when encode() is called we first enter tokenizer.py, inside the AugenblickTokenizer class. The tokenizer runs a sequential pipeline: Normalization → Pre-tokenization → Modeling → Post-processing
 
-- First comes normalization. The tokenizer applies Unicode normalization (NFKC) to standardize the text. Since our input was entirely in Devanagari, the string mostly remained unchanged after this step.
+- First comes normalization. The tokenizer applies devanagari normalization (NFC) to standardize the text. Since our input was entirely in Devanagari, the string mostly remained unchanged after this step.
 Next is pre-tokenization. The WhitespacePreTokenizer splits the normalized text wherever there are spaces or newline characters, breaking the sentence into word-like segments.
 
 - After that, the text goes to the BPE model. BPE is a subword tokenizer that initially breaks words into smaller units and then merges frequently occurring character pairs to form common subwords. Over time, repeated patterns become their own tokens.
