@@ -168,7 +168,8 @@ uv run python task3.py
 ```
 
 Model used in this run: **BPE**  
-Tokenizer source used for analysis: **trained**
+
+![Task 3 Raw results](task3.png)
 
 ### Raw results (abctokz)
 
