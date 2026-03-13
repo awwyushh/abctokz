@@ -55,8 +55,6 @@ So we added \textit{$BenchmarkRunner.\_build\_language\_batches()$} to benchmark
 Now we wanted to trace the full tokenization process for the sanskrit mantra using the BPE model.
 The pipeline has four stages (was mentioned in the task description as well):
 \begin{itemize}
-    \item CLI:
-
 
 
 
@@ -65,7 +63,83 @@ The pipeline has four stages (was mentioned in the task description as well):
 
 % ---------------------------------------------------------------
 
+\section{Task 14}
 
+\subsection{How difficult is adding a fourth model?}
+
+Adding a fourth model family like WordPiece is feasible with moderate effort.  
+The codebase already has clear abstractions in \texttt{models/base.py} and \texttt{trainers/base.py}, so the core algorithm can be added cleanly.  
+Most work is integration and plumbing across CLI, config, serialization, and tests.
+
+\subsection{Files to create from scratch}
+
+\begin{itemize}
+    \item \texttt{src/abctokz/models/wordpiece.py} \\
+    Implements the \texttt{Model} abstract interface (tokenization, vocab access, save/load behavior).
+    \item \texttt{src/abctokz/trainers/wordpiece.py} \\
+    Implements the \texttt{Trainer} abstract interface (fit/train pipeline and artifact generation).
+\end{itemize}
+
+
+\subsection{Files to modify}
+
+\begin{itemize}
+    \item \texttt{src/abctokz/tokenizer.py} \\
+    Register the new model family in load/save dispatch so artifacts can be reconstructed correctly.
+    \item CLI training command (under \texttt{src/abctokz/cli/}) \\
+    Add \texttt{wordpiece} as a valid model choice and wire trainer creation.
+    \item \texttt{src/abctokz/config/schemas.py} \\
+    Extend model-type schema validation to include the new model family.
+\end{itemize}
+
+
+\subsection{Files likely unchanged}
+
+\begin{itemize}
+    \item Normalizers (\texttt{src/abctokz/normalizers/*})
+    \item Pre-tokenizers (\texttt{src/abctokz/pretokenizers/*})
+    \item Most evaluation metric code (\texttt{src/abctokz/eval/metrics.py})
+\end{itemize}
+
+\subsection{Tests to add (repo-specific layout)}
+
+In this repository, model tests are grouped in one file.  
+So the correct approach is to \textbf{extend} the existing test module, not create a new standalone one.
+
+\begin{itemize}
+    \item Modify \texttt{tests/unit/test_models.py}
+    \item Add a new class \texttt{TestWordPieceModel}, mirroring patterns used by
+    \texttt{TestBPEModel}, \texttt{TestUnigramModel}, and \texttt{TestWordLevelModel}
+\end{itemize}
+
+Recommended minimum test cases:
+\begin{itemize}
+    \item known token/wordpiece segmentation
+    \item unknown token fallback behavior
+    \item empty input handling
+    \item vocab size/access checks
+    \item save/load round-trip correctness
+\end{itemize}
+
+\subsection{Where architecture helps vs. where it resists}
+
+\textbf{Helps:}
+\begin{itemize}
+    \item Clean abstract base classes for \texttt{Model} and \texttt{Trainer}
+    \item Modular tokenizer pipeline design
+\end{itemize}
+
+\textbf{Resists:}
+\begin{itemize}
+    \item Some family registration is explicit (hardcoded dispatch), so extension is not fully plug-in based
+\end{itemize}
+
+\subsection{Biggest obstacle}
+
+The single biggest obstacle is what we feel, \textbf{artifact compatibility and class dispatch}:  
+as training the model is only half the work, the critical part is ensuring
+\texttt{Tokenizer.load()} can reconstruct the new model reliably from saved metadata.
+If this integration is incomplete, CLI encode/decode and benchmarking will fail even if the model logic itself is correct.
 
 
 
