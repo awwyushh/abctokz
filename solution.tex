@@ -1,6 +1,14 @@
 \documentclass{article}
 \usepackage{graphicx}
 
+\usepackage{fontspec}
+\usepackage{polyglossia}
+
+\setdefaultlanguage{english}
+\setotherlanguage{hindi}
+
+\newfontfamily\hindifont{Noto Serif Devanagari}[Script=Devanagari,Mapping=tex-text]
+
 \title{Augenblick Tasks}
 \author{Trained Models}
 \date{March 2026}
@@ -54,15 +62,13 @@ So we added \textit{$BenchmarkRunner.\_build\_language\_batches()$} to benchmark
 
 Now we wanted to trace the full tokenization process for the sanskrit mantra using the BPE model.
 The pipeline has four stages (was mentioned in the task description as well):
-\begin{itemize}
-
 
 
 
 
 
 % ---------------------------------------------------------------
-
+\newpage
 \section{Task 14}
 
 \subsection{How difficult is adding a fourth model?}
@@ -107,7 +113,7 @@ In this repository, model tests are grouped in one file.
 So the correct approach is to \textbf{extend} the existing test module, not create a new standalone one.
 
 \begin{itemize}
-    \item Modify \texttt{tests/unit/test_models.py}
+    \item Modify \texttt{tests/unit/test\_models.py}
     \item Add a new class \texttt{TestWordPieceModel}, mirroring patterns used by
     \texttt{TestBPEModel}, \texttt{TestUnigramModel}, and \texttt{TestWordLevelModel}
 \end{itemize}
@@ -122,17 +128,8 @@ Recommended minimum test cases:
 \end{itemize}
 
 \subsection{Where architecture helps vs. where it resists}
-
-\textbf{Helps:}
-\begin{itemize}
-    \item Clean abstract base classes for \texttt{Model} and \texttt{Trainer}
-    \item Modular tokenizer pipeline design
-\end{itemize}
-
-\textbf{Resists:}
-\begin{itemize}
-    \item Some family registration is explicit (hardcoded dispatch), so extension is not fully plug-in based
-\end{itemize}
+The architecture helps by providing clean abstract base classes for \texttt{Model} and \texttt{Trainer} to us along with a modular pipeline design. \\
+However some family registration is explicit (hardcoded dispatch), so extension is not fully plug-in based.
 
 \subsection{Biggest obstacle}
 
@@ -141,9 +138,92 @@ as training the model is only half the work, the critical part is ensuring
 \texttt{Tokenizer.load()} can reconstruct the new model reliably from saved metadata.
 If this integration is incomplete, CLI encode/decode and benchmarking will fail even if the model logic itself is correct.
 
-
-
 % ---------------------------------------------------------------
+
+\newpage
+\section{Task 19}
+
+\subsection{BPE vs Unigram vs WordLevel: what is actually different?}
+
+For this task, all three model families were trained on the \textbf{same corpus} and with the \textbf{same vocabulary size}. To keep the comparison fair, the same five inputs were encoded with all three models, and the outputs were collected into \texttt{outputs/task19/report.json}. The helper script used for verification was \texttt{task19.py}. One practical detail is worth noting: the script used the in-memory trained tokenizers for final comparison, because the current load path in the library does not fully restore the preprocessing pipeline for \texttt{WordLevel}. The script detects this automatically and reports the source used for analysis.
+
+\subsection{How it was verified}
+
+The experiment was run using:
+
+\begin{verbatim}
+uv run python task19.py
+\end{verbatim}
+
+The five evaluation inputs were:
+
+\begin{verbatim}
+hello world
+internationalization is nontrivial
+नमस्ते दुनिया
+प्रौद्योगिकीकरण महत्वपूर्ण है
+नमस्ते world 2026
+\end{verbatim}
+
+The discussion below is based directly on the generated token lists, ID sequences, and vocabulary summaries.
+
+\subsection{Side-by-side tokenization behavior}
+
+\begin{itemize}
+    \item \textbf{Easy English: \texttt{hello world}} \\
+    WordLevel returned \texttt{[hello, world]}. Unigram also returned \texttt{[hello, world]}. BPE instead split the sentence into smaller reusable fragments: \texttt{[h, \#\#el, \#\#lo, w, \#\#or, \#\#ld]}. This is the simplest demonstration that BPE prefers compositional pieces even when whole-word tokens are available.
+
+    \item \textbf{Complex English: \texttt{internationalization is nontrivial}} \\
+    WordLevel kept the input at word level: \texttt{[internationalization, is, nontrivial]}. BPE heavily segmented it into many merge-derived pieces such as \texttt{[i, \#\#nt, \#\#er, \#\#n, \#\#a, \#\#ti, \#\#on, ...]}. Unigram landed in between with \texttt{[inte, rnationalization, is, nontrivial]}. This makes BPE the most fragmentary model and Unigram the most selective subword model in this experiment.
+
+    \item \textbf{Simple Hindi: \texttt{नमस्ते दुनिया}} \\
+    WordLevel produced \texttt{[नमस्ते, दुनिया]}, and Unigram also produced \texttt{[नमस्ते, दुनिया]}. BPE split the same phrase into \texttt{[न, \#\#मस, \#\#्, \#\#ते, द, \#\#ु, \#\#नि, \#\#य, \#\#ा]}. So in Hindi too, BPE behaves as a genuine subword segmenter rather than a word memorizer.
+
+    \item \textbf{Complex Hindi: \texttt{प्रौद्योगिकीकरण महत्वपूर्ण है}} \\
+    WordLevel and Unigram both kept the three surface words intact: \texttt{[प्रौद्योगिकीकरण, महत्वपूर्ण, है]}. BPE decomposed them into a long sequence of subpieces such as \texttt{[प, \#\#्, \#\#रौ, \#\#द, \#\#्य, \#\#ोग, ... , है]}. This is the clearest example that BPE treats a morphologically rich word as a composition of reusable fragments rather than as a lexical whole.
+
+    \item \textbf{Mixed script: \texttt{नमस्ते world 2026}} \\
+    WordLevel yielded \texttt{[नमस्ते, world, 2026]}. Unigram yielded the same. BPE decomposed each span separately into \texttt{[न, \#\#मस, \#\#्, \#\#ते, w, \#\#or, \#\#ld, 2, \#\#02, \#\#6]}. This mixed-script example is useful because it shows that BPE applies the same merge logic across Devanagari, Latin text, and numerals once preprocessing has isolated the boundaries.
+\end{itemize}
+
+\subsection{What dominates each vocabulary?}
+
+The generated report summarized the vocabularies as follows:
+
+\begin{itemize}
+    \item \textbf{WordLevel:} 38 total entries, 37 whole words, 0 subwords, 0 character-like units, 1 special token.
+    \item \textbf{BPE:} 200 total entries, 123 subwords, 75 character-like units, 1 whole word, 1 special token.
+    \item \textbf{Unigram:} 200 total entries, 106 subwords, 57 character-like units, 36 whole words, 1 special token.
+\end{itemize}
+
+This is the cleanest high-level difference among the three families. WordLevel spends nearly all of its capacity memorizing observed surface forms. BPE spends nearly all of its capacity on reusable fragments. Unigram sits in between: it still prefers a strong subword inventory, but it also preserves many frequent whole words when that improves the probability of the segmentation.
+
+\subsection{Which model would I choose?}
+
+\begin{itemize}
+    \item \textbf{(a) Low-resource language: Unigram} \\
+    In low-resource settings, the tokenizer must generalize well to unseen forms. WordLevel is weakest here because it depends too much on exact lexical memorization. BPE is better, but Unigram is usually the safer default because it can preserve whole words when useful while still backing off to smaller pieces when data is sparse.
+
+    \item \textbf{(b) Agglutinative or morphologically rich languages such as Hindi or Finnish: Unigram, with BPE as a close second} \\
+    The complex Hindi example shows why. BPE handles long forms by fragmenting them aggressively, which is useful, but Unigram gives a better balance between keeping frequent long forms intact and decomposing rare forms when necessary.
+
+    \item \textbf{(c) A task requiring consistent token boundaries across languages: WordLevel} \\
+    If interpretability and stable word boundaries matter most, WordLevel is the best choice. Its outputs are the easiest to inspect and compare across scripts. The trade-off is weaker robustness to unseen words.
+\end{itemize}
+
+\subsection{What does each segmentation strategy reveal about its assumptions?}
+
+\begin{itemize}
+    \item \textbf{WordLevel assumes words are atomic.} If a word exists in the vocabulary, it should remain intact; if it does not, the model has no internal structure to fall back on.
+    \item \textbf{BPE assumes frequent adjacent symbol sequences are useful reusable units.} Language is treated as something that can be assembled from common fragments. This makes BPE deterministic and efficient, but also sometimes overly granular.
+    \item \textbf{Unigram assumes that the best tokenization is the most probable sequence of pieces.} This is a softer assumption than BPE. Instead of committing to a single merge history, it chooses among candidate segmentations according to learned likelihoods.
+\end{itemize}
+
+\subsection{Final intuition}
+
+The main lesson from this experiment is that the three models are not just different algorithms; they express different beliefs about language. \textbf{WordLevel} believes words should remain words. \textbf{BPE} believes reusable fragments are the right building blocks. \textbf{Unigram} believes tokenization should be the most probable explanation from a flexible inventory of pieces. In practice, this means WordLevel gives the cleanest boundaries, BPE gives the strongest compositional behavior, and Unigram gives the best overall balance between memorization and generalization.
+
+% ----------------------------------------------------------------
 
 \begin{thebibliography}{9}
 
