@@ -1,0 +1,423 @@
+{
+  "corpus": {
+    "type": "english_only",
+    "n_lines": 400
+  },
+  "runtime_sources": {
+    "wordlevel": "trained",
+    "bpe": "trained",
+    "unigram": "trained"
+  },
+  "results": {
+    "wordlevel": [
+      {
+        "case": "devanagari_on_english_model",
+        "text": "नमस्ते भारत",
+        "word_count": 2,
+        "token_count": 2,
+        "unk_count": 2,
+        "unk_rate": 1.0,
+        "tokens": [
+          "<unk>",
+          "<unk>"
+        ],
+        "ids": [
+          0,
+          0
+        ],
+        "decoded": ""
+      },
+      {
+        "case": "emoji_mixed",
+        "text": "hello 😊 world",
+        "word_count": 3,
+        "token_count": 3,
+        "unk_count": 3,
+        "unk_rate": 1.0,
+        "tokens": [
+          "<unk>",
+          "<unk>",
+          "<unk>"
+        ],
+        "ids": [
+          0,
+          0,
+          0
+        ],
+        "decoded": ""
+      },
+      {
+        "case": "rare_english_word",
+        "text": "electroencephalographically",
+        "word_count": 1,
+        "token_count": 1,
+        "unk_count": 1,
+        "unk_rate": 1.0,
+        "tokens": [
+          "<unk>"
+        ],
+        "ids": [
+          0
+        ],
+        "decoded": ""
+      },
+      {
+        "case": "currency_symbol",
+        "text": "price is €100",
+        "word_count": 3,
+        "token_count": 3,
+        "unk_count": 2,
+        "unk_rate": 0.6666666666666666,
+        "tokens": [
+          "<unk>",
+          "is",
+          "<unk>"
+        ],
+        "ids": [
+          0,
+          12,
+          0
+        ],
+        "decoded": "is"
+      }
+    ],
+    "bpe": [
+      {
+        "case": "devanagari_on_english_model",
+        "text": "नमस्ते भारत",
+        "word_count": 2,
+        "token_count": 10,
+        "unk_count": 10,
+        "unk_rate": 1.0,
+        "tokens": [
+          "न",
+          "##म",
+          "##स",
+          "##्",
+          "##त",
+          "##े",
+          "भ",
+          "##ा",
+          "##र",
+          "##त"
+        ],
+        "ids": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "decoded": ""
+      },
+      {
+        "case": "emoji_mixed",
+        "text": "hello 😊 world",
+        "word_count": 3,
+        "token_count": 10,
+        "unk_count": 2,
+        "unk_rate": 0.2,
+        "tokens": [
+          "h",
+          "##e",
+          "##l",
+          "##l",
+          "##o",
+          "😊",
+          "w",
+          "##or",
+          "##l",
+          "##d"
+        ],
+        "ids": [
+          0,
+          33,
+          65,
+          65,
+          81,
+          0,
+          156,
+          90,
+          65,
+          29
+        ],
+        "decoded": "ello world"
+      },
+      {
+        "case": "rare_english_word",
+        "text": "electroencephalographically",
+        "word_count": 1,
+        "token_count": 22,
+        "unk_count": 0,
+        "unk_rate": 0.0,
+        "tokens": [
+          "e",
+          "##l",
+          "##e",
+          "##c",
+          "##t",
+          "##r",
+          "##o",
+          "##en",
+          "##c",
+          "##e",
+          "##p",
+          "##h",
+          "##al",
+          "##og",
+          "##r",
+          "##a",
+          "##p",
+          "##h",
+          "##i",
+          "##c",
+          "##al",
+          "##ly"
+        ],
+        "ids": [
+          117,
+          65,
+          33,
+          27,
+          97,
+          94,
+          81,
+          45,
+          27,
+          33,
+          93,
+          50,
+          18,
+          88,
+          94,
+          1,
+          93,
+          50,
+          55,
+          27,
+          18,
+          67
+        ],
+        "decoded": "electroencephalographically"
+      },
+      {
+        "case": "currency_symbol",
+        "text": "price is €100",
+        "word_count": 3,
+        "token_count": 10,
+        "unk_count": 5,
+        "unk_rate": 0.5,
+        "tokens": [
+          "p",
+          "##r",
+          "##i",
+          "##c",
+          "##e",
+          "is",
+          "€",
+          "##1",
+          "##0",
+          "##0"
+        ],
+        "ids": [
+          0,
+          94,
+          55,
+          27,
+          33,
+          125,
+          0,
+          0,
+          0,
+          0
+        ],
+        "decoded": "rice is"
+      }
+    ],
+    "unigram": [
+      {
+        "case": "devanagari_on_english_model",
+        "text": "नमस्ते भारत",
+        "word_count": 2,
+        "token_count": 10,
+        "unk_count": 10,
+        "unk_rate": 1.0,
+        "tokens": [
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>"
+        ],
+        "ids": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "decoded": ""
+      },
+      {
+        "case": "emoji_mixed",
+        "text": "hello 😊 world",
+        "word_count": 3,
+        "token_count": 11,
+        "unk_count": 11,
+        "unk_rate": 1.0,
+        "tokens": [
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>"
+        ],
+        "ids": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "decoded": ""
+      },
+      {
+        "case": "rare_english_word",
+        "text": "electroencephalographically",
+        "word_count": 1,
+        "token_count": 27,
+        "unk_count": 27,
+        "unk_rate": 1.0,
+        "tokens": [
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>"
+        ],
+        "ids": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "decoded": ""
+      },
+      {
+        "case": "currency_symbol",
+        "text": "price is €100",
+        "word_count": 3,
+        "token_count": 10,
+        "unk_count": 9,
+        "unk_rate": 0.9,
+        "tokens": [
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "is",
+          "<unk>",
+          "<unk>",
+          "<unk>",
+          "<unk>"
+        ],
+        "ids": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          12,
+          0,
+          0,
+          0,
+          0
+        ],
+        "decoded": "is"
+      }
+    ]
+  },
+  "summary": {
+    "most_graceful": "bpe",
+    "most_fragile": "unigram",
+    "unk_ratio_by_model": {
+      "wordlevel": 0.8889,
+      "bpe": 0.3269,
+      "unigram": 0.9828
+    }
+  },
+  "suggestion_without_retraining": "Use a fallback routing strategy: if UNK rate on an input exceeds a threshold, re-encode that input with a more robust external tokenizer (e.g., SentencePiece/BPE baseline) or a second in-project tokenizer better matched to that script."
+}
