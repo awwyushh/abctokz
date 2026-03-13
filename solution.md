@@ -336,6 +336,8 @@ For the two phrases:
 
 **The raw input and normalized output are perfectly identical.** This is because these strings are already fully decomposed and validly encoded in the standard NFC representation without any uncanonical sequences. No character folding or dropping occurred.
 
+![Task 8 Results](tasks/task8.png)
+
 ### NFC vs NFKC Normalization
 
 - **NFC (Canonical Composition):** Recombines base characters and their combining marks (matras, halant, etc.) into their pre-composed canonical forms where possible. It generally preserves formatting characters like Zero-Width Joiners (ZWJ) and Zero-Width Non-Joiners (ZWNJ) unless explicitly told not to.
@@ -358,6 +360,7 @@ Why? The `_script_of()` classifier tags punctuation as an `"other"` script. The 
 
 **Why this matters for Hindi, Marathi, and Sindhi:**
 If punctuation is grouped with adjacent words rather than being pre-tokenized on its own, the BPE/Unigram model will perceive `लाल` and `लाल,` as distinct sequences. This increases the burden on the tokenization vocabulary, causing data sparsity and increasing the likelihood of generating `<unk>` tokens, rather than properly generalizing the core vocabulary separated from pure punctuation blocks.
+
 ---
 ## Task 14
 
