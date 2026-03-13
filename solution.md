@@ -322,11 +322,42 @@ Use a **runtime fallback router**:
 This reduces effective UNK in production without changing existing trained weights/artifacts.
 
 ---
-# Task 8
+## Task 8
 
+### What Does the Normalizer Actually Do?
 
+To investigate the normalization, I wrote a script (`tasks/task8.py`) to run the two input phrases through the pipeline and inspect the outputs.
 
+### Raw Input vs Normalized Output
 
+For the two phrases:
+- Sindhi: `"आयो लाल, सभई चायो, झूलेलाल!"`
+- Marathi: `"गणपती बप्पा मोरया, पुढच्या वर्षी लवकर या!"`
+
+**The raw input and normalized output are perfectly identical.** This is because these strings are already fully decomposed and validly encoded in the standard NFC representation without any uncanonical sequences. No character folding or dropping occurred.
+
+### NFC vs NFKC Normalization
+
+- **NFC (Canonical Composition):** Recombines base characters and their combining marks (matras, halant, etc.) into their pre-composed canonical forms where possible. It generally preserves formatting characters like Zero-Width Joiners (ZWJ) and Zero-Width Non-Joiners (ZWNJ) unless explicitly told not to.
+- **NFKC (Compatibility Decomposition + Composition):** Takes normalization further by replacing "compatibility" characters with their standard equivalents (e.g., stripping stylistic ligatures, fractions). Most importantly, **NFKC typically strips formatting characters like ZWJ (U+200D) and ZWNJ (U+200C)** because they are historically considered optional presentation controls.
+
+**Which does this library use for Devanagari?**
+The library explicitly uses **NFC** (via `DevanagariNormalizer`) accompanied with an explicit flag `strip_zero_width=False`, explicitly rejecting NFKC for Devanagari.
+
+**Why does that choice matter?**
+In Devanagari (specifically for Hindi, Marathi, and Sindhi), ZWJ and ZWNJ are **not** optional styling markers—they fundamentally change the written representation and phonetic structure. They dictate whether consonants form a conjunct character (e.g. `क्ष`) or stay visually split as a half-consonant (e.g. `क्‍ष`). Stripping these out (as NFKC would) is lossy, changing the literal reading and meaning of the text for these languages.
+
+### Commas, Exclamation Marks, and Spaces
+
+During **pre-tokenization**, the `DevanagariAwarePreTokenizer` processes these elements:
+
+- **Spaces** are treated as delimiters and stripped completely. They split the string into a sequence of isolated words.
+- **Punctuation** (commas `,` and exclamation marks `!`) remains **attached to the preceding adjacent word**. For instance, `लाल,` becomes exactly one pre-token `['लाल,']`. 
+
+Why? The `_script_of()` classifier tags punctuation as an `"other"` script. The tokenizer merges any `"other"` script characters with the previous non-other script run (the "devanagari" script). As a result, the pre-tokenizer doesn't split punctuation away from Devanagari words. 
+
+**Why this matters for Hindi, Marathi, and Sindhi:**
+If punctuation is grouped with adjacent words rather than being pre-tokenized on its own, the BPE/Unigram model will perceive `लाल` and `लाल,` as distinct sequences. This increases the burden on the tokenization vocabulary, causing data sparsity and increasing the likelihood of generating `<unk>` tokens, rather than properly generalizing the core vocabulary separated from pure punctuation blocks.
 ---
 ## Task 14
 
