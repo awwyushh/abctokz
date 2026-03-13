@@ -129,16 +129,9 @@ The training process follows a structured pipeline:
 5. `decode(ids)` maps IDs back to tokens and decoder reconstructs text.
 
 **Evaluation flow:**
-- Evaluation is handled through the benchmarking utilities:
-- BenchmarkRunner loads tokenizer artifacts and sample corpus data.
-- encode_batch() produces tokenized outputs.
-- decode() is used to verify round-trip correctness.
-- The eval.metrics module computes evaluation metrics such as:
- - fertility
- - UNK rate
- - sequence length ratio
- - throughput statistics
-These metrics help compare tokenizer performance across configurations.
+1. `BenchmarkRunner` loads tokenizer artifacts and corpus samples.
+2. `encode_batch()` produces encodings; `decode()` is used for round-trip checks.
+3. `eval.metrics` computes fertility, UNK rate, sequence-length ratio, and throughput summaries.
 
 ### How import structure confirms this design
 
@@ -371,8 +364,6 @@ Why? The `_script_of()` classifier tags punctuation as an `"other"` script. The 
 
 **Why this matters for Hindi, Marathi, and Sindhi:**
 If punctuation is grouped with adjacent words rather than being pre-tokenized on its own, the BPE/Unigram model will perceive `लाल` and `लाल,` as distinct sequences. This increases the burden on the tokenization vocabulary, causing data sparsity and increasing the likelihood of generating `<unk>` tokens, rather than properly generalizing the core vocabulary separated from pure punctuation blocks.
-
----
 ## Task 9
 
 ### Measuring Phrase Difficulty
@@ -436,351 +427,6 @@ Task 9 puts numbers behind Task 8 observations:
 - with adequate vocabulary, model differences narrow for short high-frequency Devanagari phrases.
 
 
----
-## Task 15
-
-### Find Something That Breaks
-
-We implemented a new, distinct edge-case test suite in: `tasks/task15.py`
-
-Run command:
-
-```bash
-uv run python tasks/task15.py
-```
-
-![Task 15 Results](tasks/task15.png)
-
-Report generated at:
-
-`outputs/task15/report.json`
-
-### What breaks (two reliable failures, different from decode-UNK reports)
-
-#### Case 1 — Offset metadata integrity is broken for multi-piece tokenization
-
-Reproduction:
-
-```python
-text = "internationalization"
-encoding = tokenizer.encode(text)
-print(encoding.tokens)
-print(encoding.offsets)
-```
-
-Observed from run:
-
-- tokens: `['i', '##nt', '##er', '##n', '##at', '##i', '##on', '##al', '##iz', '##at', '##i', '##on']`
-- offsets: `[(0, 20), (0, 20), (0, 20), ...]` for every piece
-- all offsets identical: `True`
-
-Expected:
-
-- If tokenization emits multiple pieces, offsets should correspond to piece-level spans, not the same full-span range for every token.
-
-Classification:
-
-- **Bug** (incorrect metadata; alignment info is unusable).
-
-Reason:
-
-- In `src/abctokz/tokenizer.py` `encode()`, offsets are appended using pre-token length for every emitted piece, and the piece cursor is not advanced per piece.
-
----
-
-#### Case 2 — Save/load behavior drift (same model, same text, different encoding)
-
-Reproduction:
-
-```python
-before = trained_tokenizer.encode("hello world")
-trained_tokenizer.save(path)
-loaded = Tokenizer.load(path)
-after = loaded.encode("hello world")
-```
-
-Observed from run:
-
-- before: `tokens=['hello', 'world'] ids=[5, 13]`
-- after: `tokens=['<unk>'] ids=[0]`
-- behavior changed: `True`
-
-Expected:
-
-- Encoding should be behaviorally consistent before save and after load for the same trained artifact.
-
-Classification:
-
-- **Bug** (persistence contract violation / reproducibility break).
-
-Reason:
-
-- Current load path restores model/decoder, but preprocessing pipeline state used during training is not fully reconstructed.
-
-### Why this approach is stronger
-
-This method demonstrates two independent breakages in two different contracts:
-
-1. **Metadata contract** (offsets must be meaningful for token alignment),
-2. **Persistence contract** (save/load should preserve encode behavior).
-
-So this is not only a decode quirk; it reveals architecture-level consistency issues.
-
-### What could we do
-
-- For alignment-sensitive tasks: do not rely on current per-piece offsets until fixed.
-- For production reproducibility: validate a short encode parity check after loading artifacts; if mismatch is detected, route to in-memory trained tokenizer or retrain/load via config-preserving path.
-
-### Code fixes
-
-In `src/abctokz/tokenizer.py`:
-
-1. In `encode()`, compute piece-level offsets using per-piece length and advance the piece cursor each loop.
-2. In `load()`, restore full pipeline configuration (normalizer + pre-tokenizer + processor) so post-load behavior matches pre-save behavior.
-
-This restores both token-alignment correctness and artifact reproducibility.
-
-### Post-fix verification (`task15after.py`)
-
-To verify the fixes, we added and ran:
-
-```bash
-uv run python tasks/task15after.py
-```
-
-![Task 15 after revamp results](tasks/task15after.png)
-
-Post-fix report:
-
-`outputs/task15after/report.json`
-
-Observed post-fix output:
-
-- Offsets check:
-  - `pass: True`
-  - `offsets_identical: False`
-  - sample offsets: `[(0, 1), (1, 3), (3, 5), (5, 6), (6, 8), (8, 9)]`
-- Save/load check:
-  - `pass: True`
-  - `behavior_changed: False`
-  - before: `tokens=['hello', 'world'] ids=[5, 13]`
-  - after : `tokens=['hello', 'world'] ids=[5, 13]`
-
-### Clear before vs after differences
-
-| Check | Before fix | After fix |
-|---|---|---|
-| Piece offsets for subword tokenization | All offsets identical full-span (`(0, 20)`) | Piece-level spans (incremental offsets) |
-| Save/load encode parity | Drift (`['hello','world'] -> ['<unk>']`) | Stable (`['hello','world']` both before/after) |
-
-Conclusion: both identified Task 15 bugs are fixed and validated with reproducible scripts.
-
-
----
-## Task 9
-
-### Measuring Phrase Difficulty
-
-Using the same two phrases from Task 8:
-
-- **Sindhi phrase:** `आयो लाल, सभई चायो, झूलेलाल!`
-- **Marathi phrase:** `गणपती बप्पा मोरया, पुढच्या वर्षी लवकर या!`
-
-I trained tokenizers on a Devanagari-rich corpus and measured fertility using:
-
-```bash
-uv run python tasks/task9.py
-```
-
-Report saved at: `outputs/task9/report.json`
-
-### BPE fertility by vocabulary size
-
-| Vocab size | Sindhi tokens | Sindhi fertility | Marathi tokens | Marathi fertility | Harder phrase |
-|---:|---:|---:|---:|---:|---|
-| 100 | 19 | 3.800 | 29 | 4.143 | Marathi |
-| 400 | 16 | 3.200 | 25 | 3.571 | Marathi |
-| 800 | 16 | 3.200 | 25 | 3.571 | Marathi |
-
-### Unigram fertility by vocabulary size
-
-| Vocab size | Sindhi tokens | Sindhi fertility | Marathi tokens | Marathi fertility | Harder phrase |
-|---:|---:|---:|---:|---:|---|
-| 100 | 7 | 1.400 | 14 | 2.000 | Marathi |
-| 400 | 5 | 1.000 | 7 | 1.000 | Tie |
-| 800 | 5 | 1.000 | 7 | 1.000 | Tie |
-
-### Which phrase is harder, and why?
-
-At low vocabulary size (`100`), the **Marathi phrase is harder** for both BPE and Unigram (higher fertility).
-
-Reason (observed behavior + model mechanics):
-
-- the Marathi phrase contains longer and more morphologically complex segments,
-- those segments split into more subword pieces when vocabulary is tight,
-- punctuation and orthographic complexity increase boundary pressure in low-capacity vocabularies.
-
-As vocabulary increases (`400`, `800`), Unigram catches up and both phrases become similarly easy (fertility tie at `1.0`), while BPE still keeps Marathi slightly harder.
-
-### Does fertility change meaningfully with vocabulary size?
-
-Yes, mainly from `100 -> 400`, and then it plateaus:
-
-- **BPE:** fertility drops for both phrases, then stabilizes from `400` to `800`.
-- **Unigram:** strong improvement from `100` to `400`; no further gain at `800`.
-
-This indicates diminishing returns: once frequent units are covered, adding more vocabulary gives little additional compression for these short phrases.
-
-### Takeaway
-
-Task 9 puts numbers behind Task 8 observations:
-
-- phrase difficulty is measurable via fertility,
-- vocabulary size strongly affects tokenization efficiency at small capacities,
-- with adequate vocabulary, model differences narrow for short high-frequency Devanagari phrases.
-
-
----
-## Task 15
-
-### Find Something That Breaks
-
-We implemented a new, distinct edge-case test suite in: `tasks/task15.py`
-
-Run command:
-
-```bash
-uv run python tasks/task15.py
-```
-
-![Task 15 Results](tasks/task15.png)
-
-Report generated at:
-
-`outputs/task15/report.json`
-
-### What breaks (two reliable failures, different from decode-UNK reports)
-
-#### Case 1 — Offset metadata integrity is broken for multi-piece tokenization
-
-Reproduction:
-
-```python
-text = "internationalization"
-encoding = tokenizer.encode(text)
-print(encoding.tokens)
-print(encoding.offsets)
-```
-
-Observed from run:
-
-- tokens: `['i', '##nt', '##er', '##n', '##at', '##i', '##on', '##al', '##iz', '##at', '##i', '##on']`
-- offsets: `[(0, 20), (0, 20), (0, 20), ...]` for every piece
-- all offsets identical: `True`
-
-Expected:
-
-- If tokenization emits multiple pieces, offsets should correspond to piece-level spans, not the same full-span range for every token.
-
-Classification:
-
-- **Bug** (incorrect metadata; alignment info is unusable).
-
-Reason:
-
-- In `src/abctokz/tokenizer.py` `encode()`, offsets are appended using pre-token length for every emitted piece, and the piece cursor is not advanced per piece.
-
----
-
-#### Case 2 — Save/load behavior drift (same model, same text, different encoding)
-
-Reproduction:
-
-```python
-before = trained_tokenizer.encode("hello world")
-trained_tokenizer.save(path)
-loaded = Tokenizer.load(path)
-after = loaded.encode("hello world")
-```
-
-Observed from run:
-
-- before: `tokens=['hello', 'world'] ids=[5, 13]`
-- after: `tokens=['<unk>'] ids=[0]`
-- behavior changed: `True`
-
-Expected:
-
-- Encoding should be behaviorally consistent before save and after load for the same trained artifact.
-
-Classification:
-
-- **Bug** (persistence contract violation / reproducibility break).
-
-Reason:
-
-- Current load path restores model/decoder, but preprocessing pipeline state used during training is not fully reconstructed.
-
-### Why this approach is stronger
-
-This method demonstrates two independent breakages in two different contracts:
-
-1. **Metadata contract** (offsets must be meaningful for token alignment),
-2. **Persistence contract** (save/load should preserve encode behavior).
-
-So this is not only a decode quirk; it reveals architecture-level consistency issues.
-
-### What could we do
-
-- For alignment-sensitive tasks: do not rely on current per-piece offsets until fixed.
-- For production reproducibility: validate a short encode parity check after loading artifacts; if mismatch is detected, route to in-memory trained tokenizer or retrain/load via config-preserving path.
-
-### Code fixes
-
-In `src/abctokz/tokenizer.py`:
-
-1. In `encode()`, compute piece-level offsets using per-piece length and advance the piece cursor each loop.
-2. In `load()`, restore full pipeline configuration (normalizer + pre-tokenizer + processor) so post-load behavior matches pre-save behavior.
-
-This restores both token-alignment correctness and artifact reproducibility.
-
-### Post-fix verification (`task15after.py`)
-
-To verify the fixes, we added and ran:
-
-```bash
-uv run python tasks/task15after.py
-```
-
-![Task 15 after revamp results](tasks/task15after.png)
-
-Post-fix report:
-
-`outputs/task15after/report.json`
-
-Observed post-fix output:
-
-- Offsets check:
-  - `pass: True`
-  - `offsets_identical: False`
-  - sample offsets: `[(0, 1), (1, 3), (3, 5), (5, 6), (6, 8), (8, 9)]`
-- Save/load check:
-  - `pass: True`
-  - `behavior_changed: False`
-  - before: `tokens=['hello', 'world'] ids=[5, 13]`
-  - after : `tokens=['hello', 'world'] ids=[5, 13]`
-
-### Clear before vs after differences
-
-| Check | Before fix | After fix |
-|---|---|---|
-| Piece offsets for subword tokenization | All offsets identical full-span (`(0, 20)`) | Piece-level spans (incremental offsets) |
-| Save/load encode parity | Drift (`['hello','world'] -> ['<unk>']`) | Stable (`['hello','world']` both before/after) |
-
-Conclusion: both identified Task 15 bugs are fixed and validated with reproducible scripts.
-
-
----
 ## Task 13
 Okay so im gonna try to remove the exoctic whitespace normalization from the normalizer and see what happens. 
 What im predicting is that a few tokenisations tests are going fail so the inheritly when those exoctic charecters are encountered a white space should show but now that it wont show, ther will be tests that fail
@@ -788,10 +434,10 @@ What im predicting is that a few tokenisations tests are going fail so the inher
 Also i think there will be a direct increase in the number of tokens, especially Unowkn tokens
 
 unchanged 
-![alt text](image-1.png)
+![alt text](tasks/image-1.png)
 
 modified:
-![alt text](image.png)
+![alt text](tasks/image.png)
 
 SO after running the results have been pretty suprising, only one test failed and that was the normalizer integration test, all the other tokenisation tests passed perfectly, 
 Now to me this is suprising is because, the thought process was that, the tokens are gonna start to look all weird and messed up but somehow it didnt
@@ -859,146 +505,145 @@ If this integration is incomplete, CLI encode/decode and benchmarking will fail 
 
 ---
 
+## Task 15
 
+### Find Something That Breaks
 
----
+We implemented a new, distinct edge-case test suite in: `tasks/task15.py`
 
----
+Run command:
 
-## Task 16
-
-## Is abctokz ready for production?
-
-Short answer: **promising foundation, not yet production-ready for million-document/day critical pipelines**.
-
-### Three reasons I would feel confident deploying it
-
-#### 1) Modular architecture is clean and extensible
-
-The pipeline boundary is explicit: normalizer → pre-tokenizer → model → post-processor → decoder. This is a strong software design choice and aligns with clean separation of concerns.
-
-Evidence:
-- `docs/architecture.md` documents this pipeline and roles.
-- `src/abctokz/tokenizer.py` centralizes orchestration while model/trainer logic stays in dedicated modules.
-- Builder factories exist for key component families:
-  - `src/abctokz/normalizers/__init__.py`
-  - `src/abctokz/pretokenizers/__init__.py`
-  - `src/abctokz/trainers/__init__.py`
-
-#### 2) Test coverage breadth is good for core correctness
-
-The project includes unit, integration, property, and golden tests. This gives meaningful confidence that core behavior is stable under normal and many edge scenarios.
-
-Evidence:
-- `tests/unit/` validates model, trainer, normalizer, pretokenizer, decoder, vocab behavior.
-- `tests/integration/test_train_save_load.py` validates full train→save→load→encode/decode paths.
-- `tests/property/test_determinism.py` checks determinism/idempotency.
-- `tests/unit/test_unicode_edge_cases.py` exercises Devanagari and Unicode edge behavior.
-
-#### 3) Config discipline and schema checks reduce accidental misuse
-
-Pydantic schemas are strict (`extra="forbid"`) and immutable (`frozen=True`) for core config models. Alignment checks (model/trainer) prevent invalid combinations at config time.
-
-Evidence:
-- `src/abctokz/config/schemas.py` (`BaseConfig`, `TokenizerConfig.check_trainer_model_alignment`).
-- Artifact schema compatibility guard exists in load path (`schema_version` checks).
-
-### Three reasons I would hesitate (concrete production gaps)
-
-#### 1) Lifecycle/operability gap: no CI pipeline and no quality gates shown
-
-For production rollout, automated CI gates (tests, lint, types, coverage thresholds) are mandatory. The repository currently has tooling config but no visible CI workflow definitions.
-
-Evidence:
-- `pyproject.toml` defines `pytest`, `ruff`, `mypy`, and coverage sections.
-- No `.github/workflows/*` files are present in this workspace.
-- Coverage config has no `fail_under` threshold (so minimum quality bar is not enforced).
-
-#### 2) Performance/concurrency gap for million-doc/day serving
-
-Batch encoding is currently just a Python list comprehension over single-item encode calls. This is simple and correct, but it is not a throughput-optimized architecture for high-QPS production workloads.
-
-Evidence:
-- `src/abctokz/tokenizer.py`: `encode_batch()` returns `[self.encode(t) for t in texts]`.
-- No worker pool / multiprocessing / async serving module exists in the codebase.
-
-#### 3) Reliability gap in load-time error handling and upgrade strategy
-
-Two concerns:
-- `Tokenizer.load()` swallows config restoration failures with `except Exception: tok_cfg = None`, which can silently degrade behavior.
-- Schema mismatch currently hard-fails without a migration path (`SchemaVersionError`), which is risky in rolling upgrade environments.
-
-Evidence:
-- `src/abctokz/tokenizer.py` (`except Exception` during config restore).
-- `src/abctokz/tokenizer.py` raises `SchemaVersionError` on mismatch with no migration mechanism.
-
-### Urgency ranking (what to fix first)
-
-1. **P0 — Performance/serving architecture**
-  - Why first: million-doc/day requirement is primarily throughput + latency + reliability under load.
-2. **P1 — CI/CD quality gates + release discipline**
-  - Why second: prevents regressions and enforces consistency across contributors and releases.
-3. **P2 — Robust artifact compatibility/migration and explicit error handling**
-  - Why third: critical for long-lived deployments and smooth upgrades.
-
-### Architecture and SDLC improvements (with design-pattern guidance)
-
-#### A) Introduce a `TokenizerService` facade + Strategy-based execution backends
-
-Use a **Facade pattern** for service-facing API and **Strategy pattern** for execution modes:
-- `LocalSingleThreadStrategy`
-- `ProcessPoolBatchStrategy`
-- `NativeFastPathStrategy` (future Rust/C++ backend)
-
-Benefit: operational tuning (throughput/latency) without changing domain logic.
-
-#### B) Replace hardcoded factories with a plugin registry (Registry + Abstract Factory)
-
-Current `if isinstance(...)` builders are clear but require source edits for each new component. Add a registry keyed by config type string to enable extension without touching core dispatch code.
-
-Benefit: lower extension friction and cleaner open/closed compliance.
-
-#### C) Add migration pipeline for artifacts (Chain of Responsibility)
-
-Instead of immediate fail on schema mismatch, route artifact metadata through sequential migrations (`v1→v2→v3...`) before final validation.
-
-Benefit: safer rolling upgrades and backward compatibility in production.
-
-### Suggested target design (small mermaid diagram)
-
-```mermaid
-flowchart LR
-  A[Client / Pipeline Job] --> B[TokenizerService Facade]
-  B --> C{Execution Strategy}
-  C --> C1[Single-thread]
-  C --> C2[Process pool]
-  C --> C3[Native fast path]
-
-  B --> D[Pipeline Orchestrator]
-  D --> E[Normalizer]
-  D --> F[PreTokenizer]
-  D --> G[Model]
-  D --> H[PostProcessor]
-  D --> I[Decoder]
-
-  B --> J[Artifact Manager]
-  J --> K[Schema Validator]
-  K --> L[Migration Chain]
-  L --> M[Loaded Artifact]
-
-  N[Registry / Plugin Catalog] --> E
-  N --> F
-  N --> G
-  N --> H
-  N --> I
+```bash
+uv run python tasks/task15.py
 ```
 
-### Final audit verdict
+![Task 15 Results](tasks/task15.png)
 
-I would deploy **only behind a controlled canary**, not as the sole production tokenizer for a massive pipeline yet. The architecture and correctness foundations are genuinely good. The blocking work is mostly production engineering: throughput strategy, CI/CD gates, and artifact lifecycle hardening.
+Report generated at:
 
+`outputs/task15/report.json`
+
+### What breaks (two reliable failures, different from decode-UNK reports)
+
+#### Case 1 — Offset metadata integrity is broken for multi-piece tokenization
+
+Reproduction:
+
+```python
+text = "internationalization"
+encoding = tokenizer.encode(text)
+print(encoding.tokens)
+print(encoding.offsets)
+```
+
+Observed from run:
+
+- tokens: `['i', '##nt', '##er', '##n', '##at', '##i', '##on', '##al', '##iz', '##at', '##i', '##on']`
+- offsets: `[(0, 20), (0, 20), (0, 20), ...]` for every piece
+- all offsets identical: `True`
+
+Expected:
+
+- If tokenization emits multiple pieces, offsets should correspond to piece-level spans, not the same full-span range for every token.
+
+Classification:
+
+- **Bug** (incorrect metadata; alignment info is unusable).
+
+Reason:
+
+- In `src/abctokz/tokenizer.py` `encode()`, offsets are appended using pre-token length for every emitted piece, and the piece cursor is not advanced per piece.
 
 ---
+
+#### Case 2 — Save/load behavior drift (same model, same text, different encoding)
+
+Reproduction:
+
+```python
+before = trained_tokenizer.encode("hello world")
+trained_tokenizer.save(path)
+loaded = Tokenizer.load(path)
+after = loaded.encode("hello world")
+```
+
+Observed from run:
+
+- before: `tokens=['hello', 'world'] ids=[5, 13]`
+- after: `tokens=['<unk>'] ids=[0]`
+- behavior changed: `True`
+
+Expected:
+
+- Encoding should be behaviorally consistent before save and after load for the same trained artifact.
+
+Classification:
+
+- **Bug** (persistence contract violation / reproducibility break).
+
+Reason:
+
+- Current load path restores model/decoder, but preprocessing pipeline state used during training is not fully reconstructed.
+
+### Why this approach is stronger
+
+This method demonstrates two independent breakages in two different contracts:
+
+1. **Metadata contract** (offsets must be meaningful for token alignment),
+2. **Persistence contract** (save/load should preserve encode behavior).
+
+So this is not only a decode quirk; it reveals architecture-level consistency issues.
+
+### What could we do
+
+- For alignment-sensitive tasks: do not rely on current per-piece offsets until fixed.
+- For production reproducibility: validate a short encode parity check after loading artifacts; if mismatch is detected, route to in-memory trained tokenizer or retrain/load via config-preserving path.
+
+### Code fixes
+
+In `src/abctokz/tokenizer.py`:
+
+1. In `encode()`, compute piece-level offsets using per-piece length and advance the piece cursor each loop.
+2. In `load()`, restore full pipeline configuration (normalizer + pre-tokenizer + processor) so post-load behavior matches pre-save behavior.
+
+This restores both token-alignment correctness and artifact reproducibility.
+
+### Post-fix verification (`task15after.py`)
+
+To verify the fixes, we added and ran:
+
+```bash
+uv run python tasks/task15after.py
+```
+
+![Task 15 after revamp results](tasks/task15after.png)
+
+Post-fix report:
+
+`outputs/task15after/report.json`
+
+Observed post-fix output:
+
+- Offsets check:
+  - `pass: True`
+  - `offsets_identical: False`
+  - sample offsets: `[(0, 1), (1, 3), (3, 5), (5, 6), (6, 8), (8, 9)]`
+- Save/load check:
+  - `pass: True`
+  - `behavior_changed: False`
+  - before: `tokens=['hello', 'world'] ids=[5, 13]`
+  - after : `tokens=['hello', 'world'] ids=[5, 13]`
+
+### Clear before vs after differences
+
+| Check | Before fix | After fix |
+|---|---|---|
+| Piece offsets for subword tokenization | All offsets identical full-span (`(0, 20)`) | Piece-level spans (incremental offsets) |
+| Save/load encode parity | Drift (`['hello','world'] -> ['<unk>']`) | Stable (`['hello','world']` both before/after) |
+
+Conclusion: both identified Task 15 bugs are fixed and validated with reproducible scripts.
+
+
 ## Task 19
 
 ### BPE vs Unigram vs WordLevel: what is actually different?
@@ -1072,3 +717,5 @@ This is the cleanest high-level difference among the three families. WordLevel s
 ### Final intuition
 
 The main lesson from this experiment is that the three models are not just different algorithms; they express different beliefs about language. **WordLevel** believes words should remain words. **BPE** believes reusable fragments are the right building blocks. **Unigram** believes tokenization should be the most probable explanation from a flexible inventory of pieces. In practice, this means WordLevel gives the cleanest boundaries, BPE gives the strongest compositional behavior, and Unigram gives the best overall balance between memorization and generalization.
+```
+
