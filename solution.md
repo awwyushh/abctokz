@@ -426,7 +426,32 @@ Task 9 puts numbers behind Task 8 observations:
 - vocabulary size strongly affects tokenization efficiency at small capacities,
 - with adequate vocabulary, model differences narrow for short high-frequency Devanagari phrases.
 
+---
+## Task 11
 
+### Can You Trust the Benchmark Numbers?
+
+I ran the same benchmark twice (same tokenizer artifact, same corpus, same config) using `tasks/task11.py`:
+
+```bash
+uv run python tasks/task11.py
+```
+
+The script builds a small BPE artifact, then calls `BenchmarkRunner.run()` twice and compares the two result lists.
+
+**What’s stable between runs:** All token-derived metrics match exactly: `n_sentences`, `mean_tokens_per_sentence`, `fertility`, `unk_rate`, `round_trip_success_rate`, `normalized_seq_length_ratio`. Encode is deterministic and the runner uses a fixed sample (seed 42 in `sample_lines`), so that’s expected.
+
+**What varies:** `throughput_sps` and `elapsed_seconds` change every time. On my runs, throughput went from ~26k sps to ~27k sps. So anything that depends on wall-clock timing is inherently noisy.
+
+**Design choice in `benchmark.py`:** The runner does several timed runs (e.g. 5) but only keeps the **last** run’s encodings to compute fertility, UNK rate, round-trip, etc. So those metrics are not averaged over the timed runs—they’re from a single encode pass. That keeps them deterministic for a given corpus sample but means we never see variance in tokenization quality across those runs. If the goal were to report “fertility ± uncertainty,” you’d have to compute metrics per timed run and then aggregate.
+
+**What I wouldn’t trust:** A single benchmark run’s throughput number as “the” performance of the tokenizer. I’d want median (or mean) and spread over many runs, or over multiple full benchmark invocations.
+
+**What I’d change:** (1) Optionally report timing as median and IQR (or min/max) over the existing `timed_runs` instead of just the mean. (2) If we care about stability of token metrics, run the full benchmark N times with the same config and confirm fertility/unk_rate/round_trip are identical across those N runs—that would make the “trust” story explicit in CI.
+
+Report path: `outputs/task11/report.json`
+
+---
 ## Task 13
 Okay so im gonna try to remove the exoctic whitespace normalization from the normalizer and see what happens. 
 What im predicting is that a few tokenisations tests are going fail so the inheritly when those exoctic charecters are encountered a white space should show but now that it wont show, ther will be tests that fail
