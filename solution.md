@@ -362,6 +362,70 @@ Why? The `_script_of()` classifier tags punctuation as an `"other"` script. The 
 If punctuation is grouped with adjacent words rather than being pre-tokenized on its own, the BPE/Unigram model will perceive `लाल` and `लाल,` as distinct sequences. This increases the burden on the tokenization vocabulary, causing data sparsity and increasing the likelihood of generating `<unk>` tokens, rather than properly generalizing the core vocabulary separated from pure punctuation blocks.
 
 ---
+## Task 9
+
+### Measuring Phrase Difficulty
+
+Using the same two phrases from Task 8:
+
+- **Sindhi phrase:** `आयो लाल, सभई चायो, झूलेलाल!`
+- **Marathi phrase:** `गणपती बप्पा मोरया, पुढच्या वर्षी लवकर या!`
+
+I trained tokenizers on a Devanagari-rich corpus and measured fertility using:
+
+```bash
+uv run python tasks/task9.py
+```
+
+Report saved at: `outputs/task9/report.json`
+
+### BPE fertility by vocabulary size
+
+| Vocab size | Sindhi tokens | Sindhi fertility | Marathi tokens | Marathi fertility | Harder phrase |
+|---:|---:|---:|---:|---:|---|
+| 100 | 19 | 3.800 | 29 | 4.143 | Marathi |
+| 400 | 16 | 3.200 | 25 | 3.571 | Marathi |
+| 800 | 16 | 3.200 | 25 | 3.571 | Marathi |
+
+### Unigram fertility by vocabulary size
+
+| Vocab size | Sindhi tokens | Sindhi fertility | Marathi tokens | Marathi fertility | Harder phrase |
+|---:|---:|---:|---:|---:|---|
+| 100 | 7 | 1.400 | 14 | 2.000 | Marathi |
+| 400 | 5 | 1.000 | 7 | 1.000 | Tie |
+| 800 | 5 | 1.000 | 7 | 1.000 | Tie |
+
+### Which phrase is harder, and why?
+
+At low vocabulary size (`100`), the **Marathi phrase is harder** for both BPE and Unigram (higher fertility).
+
+Reason (observed behavior + model mechanics):
+
+- the Marathi phrase contains longer and more morphologically complex segments,
+- those segments split into more subword pieces when vocabulary is tight,
+- punctuation and orthographic complexity increase boundary pressure in low-capacity vocabularies.
+
+As vocabulary increases (`400`, `800`), Unigram catches up and both phrases become similarly easy (fertility tie at `1.0`), while BPE still keeps Marathi slightly harder.
+
+### Does fertility change meaningfully with vocabulary size?
+
+Yes, mainly from `100 -> 400`, and then it plateaus:
+
+- **BPE:** fertility drops for both phrases, then stabilizes from `400` to `800`.
+- **Unigram:** strong improvement from `100` to `400`; no further gain at `800`.
+
+This indicates diminishing returns: once frequent units are covered, adding more vocabulary gives little additional compression for these short phrases.
+
+### Takeaway
+
+Task 9 puts numbers behind Task 8 observations:
+
+- phrase difficulty is measurable via fertility,
+- vocabulary size strongly affects tokenization efficiency at small capacities,
+- with adequate vocabulary, model differences narrow for short high-frequency Devanagari phrases.
+
+
+---
 ## Task 14
 
 ### How difficult is adding a fourth model?
