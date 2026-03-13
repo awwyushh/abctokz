@@ -53,19 +53,17 @@ The corpus has mixed Hindi English and Marathi Language
 Okay so upon running this we get a series of almost 76 tokens
 <img width="1014" height="191" alt="image" src="https://github.com/user-attachments/assets/c5a697a9-c322-4ca8-b519-773ff1b8884a" />
 
-- so our understanding is that from when the encode is run we first land at tokeniser.py file(class AugenblickTokenizer) here the sequential pipeline is run **Normalization -> Pre-tokenization -> Modeling -> Post-processing** 
+- From our understanding of the codebase, when encode() is called we first enter tokenizer.py, inside the AugenblickTokenizer class. The tokenizer runs a sequential pipeline: Normalization → Pre-tokenization → Modeling → Post-processing
 
-- here after teh normalisation includes the unicode normalisation file i.e NFKC text
-for such fully Devangari sequence it will basically remain unchanged
-in the pretokenisation, coming out from the whitespavepretokenizer it will be split at places of newline and whitespace characters. 
+- First comes normalization. The tokenizer applies Unicode normalization (NFKC) to standardize the text. Since our input was entirely in Devanagari, the string mostly remained unchanged after this step.
+Next is pre-tokenization. The WhitespacePreTokenizer splits the normalized text wherever there are spaces or newline characters, breaking the sentence into word-like segments.
 
-- next would be the BPE model. So this is basically a subword splitting tokeniser, its gonna break down incoming text to near individual tokens and then start grouping subwords according to which subwords are repeated, It gives the tokens that reapeat frequently a new token recursively while its exhausted.
+- After that, the text goes to the BPE model. BPE is a subword tokenizer that initially breaks words into smaller units and then merges frequently occurring character pairs to form common subwords. Over time, repeated patterns become their own tokens.
+Once the subwords are identified, the tokenizer looks them up in the vocabulary table and converts each one into its corresponding integer ID. This list of IDs is the final encoded output.
 
-- then the final step in the encoding, it looks up the vocabulary table to , turn each and every subwords to individual ids.
+- For decoding, the SubwordDecoder reverses the process. It takes the token IDs, maps them back to their subwords using the vocabulary, and reconstructs the text while handling special tokens.
 
-- The decoding back to string is dont by the subwordDecoder, it taked the integer ids and converts them back to the subwords from the vocabulary table, and the special charecters are substituted. 
-
-- An observation here was that there were a bunch of 0s inside signifying unknown tokens and there was a stark difference in the original text and the final decoded text.
+- One thing we noticed during testing was the presence of multiple 0 tokens, which seem to represent unknown tokens. Because of this, the decoded text differed noticeably from the original input, suggesting that parts of the Devanagari text were not present in the trained vocabulary.
 
 ---
 
