@@ -326,6 +326,81 @@ Use a **runtime fallback router**:
 This reduces effective UNK in production without changing existing trained weights/artifacts.
 
 ---
+## Task 7 — Does Encode → Decode Get You Back to Start?
+
+A tokenizer is ideally lossless: encode text, decode the token IDs, and you get back the same string. This task tests round-trip behavior across multilingual examples and clarifies what the `round_trip_success_rate` metric measures.
+
+### How it was verified
+
+Run the experiment:
+
+```bash
+uv run python tasks/task7.py
+```
+
+![Task 7 Results](tasks/task7.png)
+
+Report path: `outputs/task7/report.json`.
+
+### One case where the round-trip is exact
+
+When the input is already in the form the tokenizer uses internally (e.g. NFC and whitespace-normalized), encode → decode returns the original string unchanged.
+
+**Examples (from the script):**
+
+| Original              | Decoded               | Round-trip exact |
+|----------------------|-----------------------|------------------|
+| `hello world`        | `hello world`         | Yes              |
+| `encode decode round trip` | `encode decode round trip` | Yes        |
+| `नमस्ते दुनिया`     | `नमस्ते दुनिया`      | Yes              |
+
+So for ASCII and for Devanagari that is already in NFC, the pipeline is lossless: the normalizer does not change the string, and the model + decoder reconstruct it exactly.
+
+### One case where the round-trip is lossy (or different)
+
+When the input is in **NFD** (decomposed) form, the normalizer converts it to **NFC** (composed) before tokenization. Decode then outputs NFC. So the *decoded* string is not equal to the *raw* input, even though they look the same on screen.
+
+**Example:**
+
+- **Original (NFD):** `'cafe\u0301'` — Latin letter `e` plus combining acute accent (U+0301).
+- **Decoded:** `'café'` — single precomposed character U+00E9.
+
+So: `original != decoded` (string comparison), but they are **canonically equivalent** and visually identical. The “loss” is only of the specific Unicode form (NFD vs NFC), not of content.
+
+**What changed and why:** The normalizer (Devanagari/multilingual pipeline) applies NFC so that all text is in a single, stable form before tokenization. NFD input is therefore converted to NFC; the tokenizer never sees NFD. Decode outputs the token strings as stored (NFC), so round-trip back to *raw* NFD fails by string equality, while round-trip to *normalized* (NFC) form succeeds.
+
+### Is the lossy case a bug, an acceptable trade-off, or intentional design?
+
+**Intentional design / acceptable trade-off.** The codebase documents this: the normalizer is “lossless relative to the normalized form”; if you need byte-for-byte round-trip to the raw input, you must use `IdentityNormalizer` (or no normalizer). For most NLP use cases, canonical equivalence (NFC) is what matters; insisting on NFD would complicate vocabularies and matching for no practical benefit. So this is a deliberate design choice, not a bug.
+
+### What does `round_trip_success_rate` measure — and what does it not?
+
+**Definition (in `eval/metrics.py`):** The metric is the fraction of sentence pairs `(target, decoded)` where `target == decoded` (string equality). If `normalized_originals` is provided, `decoded` is compared to that list instead of the raw `originals`.
+
+**What it measures:**
+
+- **With default call:** Fraction of sentences for which the *raw* input string equals the decoded string. So NFD input compared to NFC decode counts as a *failed* round-trip.
+- **With `normalized_originals`:** Fraction of sentences for which the *normalized* (e.g. NFC) input equals the decoded string. That matches the tokenizer’s internal notion of “same text” and is the right comparison when the pipeline includes a normalizer.
+
+**What it does not measure:**
+
+- **Semantic or canonical equivalence** — it uses `==`, so NFD vs NFC are different.
+- **Per-token or character-level fidelity** — it only checks whole-sentence string equality.
+- **Whether special tokens were preserved** — decoding usually strips special tokens; the metric does not account for that.
+- **Robustness to different normalizers** — it does not run multiple normalizers; you choose what to pass as `originals` / `normalized_originals`.
+
+So: **`round_trip_success_rate` is “fraction of sentences that survive encode→decode with exact string match (optionally to a normalized target).”** It does not report Unicode form, token-level correctness, or semantic equivalence.
+
+### NFD vs NFC: tip from the task
+
+Text in **NFD** (decomposed) and **NFC** (composed) can look identical on screen but differ in code points. Example: `café` as NFC is `'café'` (U+00E9); as NFD it is `'cafe\u0301'` (e + combining acute). The script shows:
+
+- `Decode(encode(NFC "café")) == "café"` → True.
+- `Decode(encode(NFD "café")) == NFD "café"` → False (decode is NFC).
+
+So for round-trip tests, compare either against the **normalized** form (e.g. NFC) via `normalized_originals`, or use NFC input if you want “original == decoded” with the default metric.
+
+---
 ## Task 8
 
 ### What Does the Normalizer Actually Do?
