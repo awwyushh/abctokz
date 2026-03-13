@@ -129,9 +129,16 @@ The training process follows a structured pipeline:
 5. `decode(ids)` maps IDs back to tokens and decoder reconstructs text.
 
 **Evaluation flow:**
-1. `BenchmarkRunner` loads tokenizer artifacts and corpus samples.
-2. `encode_batch()` produces encodings; `decode()` is used for round-trip checks.
-3. `eval.metrics` computes fertility, UNK rate, sequence-length ratio, and throughput summaries.
+- Evaluation is handled through the benchmarking utilities:
+- BenchmarkRunner loads tokenizer artifacts and sample corpus data.
+- encode_batch() produces tokenized outputs.
+- decode() is used to verify round-trip correctness.
+- The eval.metrics module computes evaluation metrics such as:
+ - fertility
+ - UNK rate
+ - sequence length ratio
+ - throughput statistics
+These metrics help compare tokenizer performance across configurations.
 
 ### How import structure confirms this design
 
