@@ -148,12 +148,6 @@ This would make module boundaries fully consistent with the intended architectur
 ---
 ## Task 3
 
-
-
-
----
-## Task 14
-
 ### The National Anthem Test
 
 For this task, we used the first stanza of **Jana Gana Mana** in two forms:
@@ -216,6 +210,9 @@ The same two texts were tested with `tiktoken` (`cl100k_base`):
 This reveals a key practical point: **fertility is highly tokenizer-dependent**. A domain/script-aware tokenizer trained on relevant data can be much more token-efficient for that script than a generic external tokenizer.
 
 Report saved at: `outputs/task3/report.json`
+
+---
+## Task 14
 
 ### How difficult is adding a fourth model?
 
