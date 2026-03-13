@@ -164,7 +164,7 @@ This would make module boundaries fully consistent with the intended architectur
 ---
 ## Task 3
 
-### The National Anthem Test
+### The National Anthem Testimage6
 
 For this task, we used the first stanza of **Jana Gana Mana** in two forms:
 
@@ -226,6 +226,102 @@ The same two texts were tested with `tiktoken` (`cl100k_base`):
 This reveals a key practical point: **fertility is highly tokenizer-dependent**. A domain/script-aware tokenizer trained on relevant data can be much more token-efficient for that script than a generic external tokenizer.
 
 Report saved at: `outputs/task3/report.json`
+
+---
+## Task 6
+
+### Making the tokenizer say `<unk>`
+
+For this task, I created and ran a dedicated experiment script:
+
+```bash
+uv run python task6.py
+```
+
+![Task 6 Results](task6.png)
+
+The script trains all 3 model families on an **English-only corpus**, then probes difficult inputs:
+
+- Devanagari on English-only model
+- Emoji mixed with English
+- Rare long English word
+- Currency symbol input
+
+Raw report: `outputs/task6/report.json`
+
+### Measured UNK behavior
+
+| Model | Case | Tokens | UNK count | UNK rate |
+|---|---|---:|---:|---:|
+| WordLevel | devanagari_on_english_model | 2 | 2 | 1.000 |
+| WordLevel | emoji_mixed | 3 | 3 | 1.000 |
+| WordLevel | rare_english_word | 1 | 1 | 1.000 |
+| WordLevel | currency_symbol | 3 | 2 | 0.667 |
+| BPE | devanagari_on_english_model | 10 | 10 | 1.000 |
+| BPE | emoji_mixed | 10 | 2 | 0.200 |
+| BPE | rare_english_word | 22 | 0 | 0.000 |
+| BPE | currency_symbol | 10 | 5 | 0.500 |
+| Unigram | devanagari_on_english_model | 10 | 10 | 1.000 |
+| Unigram | emoji_mixed | 11 | 11 | 1.000 |
+| Unigram | rare_english_word | 27 | 27 | 1.000 |
+| Unigram | currency_symbol | 10 | 9 | 0.900 |
+
+Aggregate UNK ratio across all test cases:
+
+- **WordLevel:** 0.8889
+- **BPE:** 0.3269
+- **Unigram:** 0.9828
+
+### At least two different causes of `<unk>`
+
+#### Cause 1: Closed-vocabulary OOV (WordLevel model limit)
+
+**Trigger:** unseen whole pre-token not present in vocabulary.
+
+- Example: `electroencephalographically` on English-only WordLevel model.
+- Behavior: entire word becomes `<unk>` in one shot.
+- Why: `WordLevelModel.tokenize()` does direct lookup per pre-token and falls back if missing.
+
+This is a **fundamental model-type limit** of word-level lookup.
+
+#### Cause 2: Unseen script/symbol inventory (BPE/Unigram fallback)
+
+**Trigger:** characters/pieces not represented in learned inventory (e.g., Devanagari/emoji after English-only training).
+
+- Example: `नमस्ते भारत` on English-only BPE/Unigram models.
+- BPE: all pieces map to UNK IDs when no matching vocab piece exists for those characters.
+- Unigram: Viterbi path falls back to `<unk>` pieces for unknown single-character positions.
+
+This is caused by **training data coverage + subword inventory limits**, not only script itself.
+
+### Was it normalizer, pre-tokenizer, training corpus, or model limit?
+
+In this experiment:
+
+- **Primary cause:** training corpus mismatch (English-only) and resulting vocabulary/piece coverage.
+- **Model sensitivity:**
+  - WordLevel is highly sensitive to unseen tokens (closed vocab behavior).
+  - BPE is more robust to rare English words via character/subword decomposition.
+  - Unigram here was fragile because many test symbols/pieces were outside its effective learned set.
+- **Normalizer/pre-tokenizer contribution:** they define boundaries and canonical form, but they are not the main root cause in these cases. The core failure driver is coverage + model fallback strategy.
+
+### Which model handles unknowns most gracefully? Which is most fragile?
+
+From measured aggregate UNK ratio:
+
+- **Most graceful:** **BPE** (0.3269)
+- **Most fragile (in this setup):** **Unigram** (0.9828)
+
+WordLevel is also fragile for any OOV-heavy scenario (0.8889), but still better than Unigram in this specific English-only training setup.
+
+### One concrete suggestion to reduce UNK rate without retraining
+
+Use a **runtime fallback router**:
+
+1. Encode with primary tokenizer.
+2. If input-level UNK rate exceeds a threshold (e.g., 0.2), re-encode with a secondary tokenizer better matched to that script/domain (for example SentencePiece/HF adapter or a script-specialized local tokenizer).
+
+This reduces effective UNK in production without changing existing trained weights/artifacts.
 
 ---
 ## Task 14
