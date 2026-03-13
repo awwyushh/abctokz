@@ -228,6 +228,97 @@ The same two texts were tested with `tiktoken` (`cl100k_base`):
 This reveals a key practical point: **fertility is highly tokenizer-dependent**. A domain/script-aware tokenizer trained on relevant data can be much more token-efficient for that script than a generic external tokenizer.
 
 Report saved at: `outputs/task3/report.json`
+---
+
+## Task 5 — Is It Truly Deterministic?
+
+For this task, I validated determinism experimentally (not just from docs) by training the same tokenizer **twice** on the same corpus with the same config/seed, then comparing behavior and artifacts.
+
+Run command:
+
+```bash
+uv run tasks/task5.py
+```
+
+Generated outputs:
+
+- Report: `outputs/task5/report.json`
+
+### Experiment design
+
+The script trains all 3 model families with identical setup:
+
+- WordLevel
+- BPE
+- Unigram
+
+For each model family:
+
+1. Train `run1` and `run2` on the same corpus/config.
+2. Encode the same probe texts with both.
+3. Compare:
+  - token IDs
+  - token strings
+  - vocab dictionary equality
+  - vocabulary insertion order
+  - model files (`vocab.json`, plus `merges.txt` for BPE, `pieces.json` for Unigram)
+4. Also compare full artifact byte-identity (`manifest.json`, `config.json`, etc.).
+
+Separately, benchmark was run twice on the same fixed artifact to measure which metrics are stable vs variable.
+
+### Results (from actual run)
+
+Console summary from `uv run tasks/task5.py`:
+
+- `[wordlevel] ids_equal=True vocab_equal=True order_equal=True manifest_equal=False`
+- `[bpe] ids_equal=True vocab_equal=True order_equal=True manifest_equal=False`
+- `[unigram] ids_equal=True vocab_equal=True order_equal=True manifest_equal=False`
+- `benchmark: token_derived_equal=True throughput_differs=True`
+
+### What is deterministic?
+
+These were deterministic across repeated training:
+
+1. **Encoding outputs** for same probe text (IDs and token strings match exactly).
+2. **Vocabulary content** (same token→id map).
+3. **Vocabulary ordering** (stable insertion order).
+4. **BPE merge-rule order** (`merges.txt` identical).
+5. **Unigram piece table ordering/scores** (`pieces.json` identical).
+6. **Tokenizer config payload** (`config.json` identical).
+
+### What is not deterministic (and why acceptable)?
+
+1. **`manifest.json` differs**: `created_at` uses wall-clock UTC timestamp, so byte-for-byte identity breaks even when model behavior is identical.
+2. **Timing metrics differ** (`throughput_sps`, elapsed times): expected due to scheduler noise, CPU frequency scaling, cache state, and background system load.
+3. **Training wall-clock time differs**: same reason as benchmark timings.
+
+This is acceptable because these do not change semantic tokenizer behavior.
+
+### Beyond token IDs: deeper checks
+
+This task explicitly verified more than “same IDs”:
+
+- **Vocabulary ordering** is stable.
+- **BPE merge order** is stable.
+- **Unigram piece ranking/order** is stable.
+- **Token-derived benchmark metrics** are stable (`fertility`, `unk_rate`, `round_trip_success_rate`, `mean_tokens_per_sentence`, `normalized_seq_length_ratio`).
+
+### Remaining legitimate risks
+
+Cases where output can legitimately differ in future:
+
+1. Different Python/NumPy/runtime versions changing edge-case ordering behavior.
+2. Corpus ingestion differences (file ordering, line endings, preprocessing differences).
+3. Any future parallelization without deterministic reduction/tie-breaking.
+4. Locale/collation-sensitive sorting changes (if implementation switches to locale-aware ordering).
+5. Explicit metadata fields (timestamps) always breaking byte-identical artifacts.
+
+### Verdict
+
+The determinism claim is **true for model behavior** in this repository under fixed inputs/config: training twice gives the same vocab/merges/pieces and same encode outputs.
+
+However, full artifact directories are **not byte-identical** because manifest metadata intentionally includes non-deterministic timestamps, and timing numbers are expected to vary run-to-run.
+```
 
 ---
 ## Task 6
@@ -1088,94 +1179,3 @@ This is the cleanest high-level difference among the three families. WordLevel s
 The main lesson from this experiment is that the three models are not just different algorithms; they express different beliefs about language. **WordLevel** believes words should remain words. **BPE** believes reusable fragments are the right building blocks. **Unigram** believes tokenization should be the most probable explanation from a flexible inventory of pieces. In practice, this means WordLevel gives the cleanest boundaries, BPE gives the strongest compositional behavior, and Unigram gives the best overall balance between memorization and generalization.
 
 ---
-
-## Task 5 — Is It Truly Deterministic?
-
-For this task, I validated determinism experimentally (not just from docs) by training the same tokenizer **twice** on the same corpus with the same config/seed, then comparing behavior and artifacts.
-
-Run command:
-
-```bash
-uv run tasks/task5.py
-```
-
-Generated outputs:
-
-- Report: `outputs/task5/report.json`
-
-### Experiment design
-
-The script trains all 3 model families with identical setup:
-
-- WordLevel
-- BPE
-- Unigram
-
-For each model family:
-
-1. Train `run1` and `run2` on the same corpus/config.
-2. Encode the same probe texts with both.
-3. Compare:
-  - token IDs
-  - token strings
-  - vocab dictionary equality
-  - vocabulary insertion order
-  - model files (`vocab.json`, plus `merges.txt` for BPE, `pieces.json` for Unigram)
-4. Also compare full artifact byte-identity (`manifest.json`, `config.json`, etc.).
-
-Separately, benchmark was run twice on the same fixed artifact to measure which metrics are stable vs variable.
-
-### Results (from actual run)
-
-Console summary from `uv run tasks/task5.py`:
-
-- `[wordlevel] ids_equal=True vocab_equal=True order_equal=True manifest_equal=False`
-- `[bpe] ids_equal=True vocab_equal=True order_equal=True manifest_equal=False`
-- `[unigram] ids_equal=True vocab_equal=True order_equal=True manifest_equal=False`
-- `benchmark: token_derived_equal=True throughput_differs=True`
-
-### What is deterministic?
-
-These were deterministic across repeated training:
-
-1. **Encoding outputs** for same probe text (IDs and token strings match exactly).
-2. **Vocabulary content** (same token→id map).
-3. **Vocabulary ordering** (stable insertion order).
-4. **BPE merge-rule order** (`merges.txt` identical).
-5. **Unigram piece table ordering/scores** (`pieces.json` identical).
-6. **Tokenizer config payload** (`config.json` identical).
-
-### What is not deterministic (and why acceptable)?
-
-1. **`manifest.json` differs**: `created_at` uses wall-clock UTC timestamp, so byte-for-byte identity breaks even when model behavior is identical.
-2. **Timing metrics differ** (`throughput_sps`, elapsed times): expected due to scheduler noise, CPU frequency scaling, cache state, and background system load.
-3. **Training wall-clock time differs**: same reason as benchmark timings.
-
-This is acceptable because these do not change semantic tokenizer behavior.
-
-### Beyond token IDs: deeper checks
-
-This task explicitly verified more than “same IDs”:
-
-- **Vocabulary ordering** is stable.
-- **BPE merge order** is stable.
-- **Unigram piece ranking/order** is stable.
-- **Token-derived benchmark metrics** are stable (`fertility`, `unk_rate`, `round_trip_success_rate`, `mean_tokens_per_sentence`, `normalized_seq_length_ratio`).
-
-### Remaining legitimate risks
-
-Cases where output can legitimately differ in future:
-
-1. Different Python/NumPy/runtime versions changing edge-case ordering behavior.
-2. Corpus ingestion differences (file ordering, line endings, preprocessing differences).
-3. Any future parallelization without deterministic reduction/tie-breaking.
-4. Locale/collation-sensitive sorting changes (if implementation switches to locale-aware ordering).
-5. Explicit metadata fields (timestamps) always breaking byte-identical artifacts.
-
-### Verdict
-
-The determinism claim is **true for model behavior** in this repository under fixed inputs/config: training twice gives the same vocab/merges/pieces and same encode outputs.
-
-However, full artifact directories are **not byte-identical** because manifest metadata intentionally includes non-deterministic timestamps, and timing numbers are expected to vary run-to-run.
-```
-
