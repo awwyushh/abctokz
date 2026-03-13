@@ -111,11 +111,15 @@ The most important abstractions in this project are the base classes. They defin
 ### Runtime workflow (what actually happens)
 
 **Training flow:**
-1. CLI/config builds a `TokenizerConfig`.
-2. `Tokenizer.from_config()` builds normalizer + pre-tokenizer + decoder shell.
-3. `Tokenizer.train()` builds a trainer via `trainers.build_trainer()`.
-4. Corpus lines are normalized and pre-tokenized before trainer consumption.
-5. Trainer learns model artifacts (vocab/merges/pieces) and returns a trained `Model`.
+The training process follows a structured pipeline:
+- A TokenizerConfig object is created through CLI or configuration files.
+- Tokenizer.from_config() constructs the pipeline components, including the normalizer, pre-tokenizer, and decoder.
+- Tokenizer.train() creates the appropriate trainer using trainers.build_trainer().
+- Each corpus line is first normalized and then pre-tokenized before being passed to the trainer.
+- The trainer learns the tokenizer model and produces artifacts such as:
+  - vocabulary
+  - merge rules
+  - subword pieces
 
 **Inference flow (encode/decode):**
 1. `encode(text)` applies normalizer.
