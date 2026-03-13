@@ -799,7 +799,7 @@ flowchart LR
 ### Final audit verdict
 
 I would deploy **only behind a controlled canary**, not as the sole production tokenizer for a massive pipeline yet. The architecture and correctness foundations are genuinely good. The blocking work is mostly production engineering: throughput strategy, CI/CD gates, and artifact lifecycle hardening.
-```
+
 
 ---
 
