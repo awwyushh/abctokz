@@ -570,6 +570,227 @@ Conclusion: both identified Task 15 bugs are fixed and validated with reproducib
 
 
 ---
+## Task 9
+
+### Measuring Phrase Difficulty
+
+Using the same two phrases from Task 8:
+
+- **Sindhi phrase:** `आयो लाल, सभई चायो, झूलेलाल!`
+- **Marathi phrase:** `गणपती बप्पा मोरया, पुढच्या वर्षी लवकर या!`
+
+I trained tokenizers on a Devanagari-rich corpus and measured fertility using:
+
+```bash
+uv run python tasks/task9.py
+```
+
+Report saved at: `outputs/task9/report.json`
+
+### BPE fertility by vocabulary size
+
+| Vocab size | Sindhi tokens | Sindhi fertility | Marathi tokens | Marathi fertility | Harder phrase |
+|---:|---:|---:|---:|---:|---|
+| 100 | 19 | 3.800 | 29 | 4.143 | Marathi |
+| 400 | 16 | 3.200 | 25 | 3.571 | Marathi |
+| 800 | 16 | 3.200 | 25 | 3.571 | Marathi |
+
+### Unigram fertility by vocabulary size
+
+| Vocab size | Sindhi tokens | Sindhi fertility | Marathi tokens | Marathi fertility | Harder phrase |
+|---:|---:|---:|---:|---:|---|
+| 100 | 7 | 1.400 | 14 | 2.000 | Marathi |
+| 400 | 5 | 1.000 | 7 | 1.000 | Tie |
+| 800 | 5 | 1.000 | 7 | 1.000 | Tie |
+
+### Which phrase is harder, and why?
+
+At low vocabulary size (`100`), the **Marathi phrase is harder** for both BPE and Unigram (higher fertility).
+
+Reason (observed behavior + model mechanics):
+
+- the Marathi phrase contains longer and more morphologically complex segments,
+- those segments split into more subword pieces when vocabulary is tight,
+- punctuation and orthographic complexity increase boundary pressure in low-capacity vocabularies.
+
+As vocabulary increases (`400`, `800`), Unigram catches up and both phrases become similarly easy (fertility tie at `1.0`), while BPE still keeps Marathi slightly harder.
+
+### Does fertility change meaningfully with vocabulary size?
+
+Yes, mainly from `100 -> 400`, and then it plateaus:
+
+- **BPE:** fertility drops for both phrases, then stabilizes from `400` to `800`.
+- **Unigram:** strong improvement from `100` to `400`; no further gain at `800`.
+
+This indicates diminishing returns: once frequent units are covered, adding more vocabulary gives little additional compression for these short phrases.
+
+### Takeaway
+
+Task 9 puts numbers behind Task 8 observations:
+
+- phrase difficulty is measurable via fertility,
+- vocabulary size strongly affects tokenization efficiency at small capacities,
+- with adequate vocabulary, model differences narrow for short high-frequency Devanagari phrases.
+
+
+---
+## Task 15
+
+### Find Something That Breaks
+
+We implemented a new, distinct edge-case test suite in: `tasks/task15.py`
+
+Run command:
+
+```bash
+uv run python tasks/task15.py
+```
+
+![Task 15 Results](tasks/task15.png)
+
+Report generated at:
+
+`outputs/task15/report.json`
+
+### What breaks (two reliable failures, different from decode-UNK reports)
+
+#### Case 1 — Offset metadata integrity is broken for multi-piece tokenization
+
+Reproduction:
+
+```python
+text = "internationalization"
+encoding = tokenizer.encode(text)
+print(encoding.tokens)
+print(encoding.offsets)
+```
+
+Observed from run:
+
+- tokens: `['i', '##nt', '##er', '##n', '##at', '##i', '##on', '##al', '##iz', '##at', '##i', '##on']`
+- offsets: `[(0, 20), (0, 20), (0, 20), ...]` for every piece
+- all offsets identical: `True`
+
+Expected:
+
+- If tokenization emits multiple pieces, offsets should correspond to piece-level spans, not the same full-span range for every token.
+
+Classification:
+
+- **Bug** (incorrect metadata; alignment info is unusable).
+
+Reason:
+
+- In `src/abctokz/tokenizer.py` `encode()`, offsets are appended using pre-token length for every emitted piece, and the piece cursor is not advanced per piece.
+
+---
+
+#### Case 2 — Save/load behavior drift (same model, same text, different encoding)
+
+Reproduction:
+
+```python
+before = trained_tokenizer.encode("hello world")
+trained_tokenizer.save(path)
+loaded = Tokenizer.load(path)
+after = loaded.encode("hello world")
+```
+
+Observed from run:
+
+- before: `tokens=['hello', 'world'] ids=[5, 13]`
+- after: `tokens=['<unk>'] ids=[0]`
+- behavior changed: `True`
+
+Expected:
+
+- Encoding should be behaviorally consistent before save and after load for the same trained artifact.
+
+Classification:
+
+- **Bug** (persistence contract violation / reproducibility break).
+
+Reason:
+
+- Current load path restores model/decoder, but preprocessing pipeline state used during training is not fully reconstructed.
+
+### Why this approach is stronger
+
+This method demonstrates two independent breakages in two different contracts:
+
+1. **Metadata contract** (offsets must be meaningful for token alignment),
+2. **Persistence contract** (save/load should preserve encode behavior).
+
+So this is not only a decode quirk; it reveals architecture-level consistency issues.
+
+### What could we do
+
+- For alignment-sensitive tasks: do not rely on current per-piece offsets until fixed.
+- For production reproducibility: validate a short encode parity check after loading artifacts; if mismatch is detected, route to in-memory trained tokenizer or retrain/load via config-preserving path.
+
+### Code fixes
+
+In `src/abctokz/tokenizer.py`:
+
+1. In `encode()`, compute piece-level offsets using per-piece length and advance the piece cursor each loop.
+2. In `load()`, restore full pipeline configuration (normalizer + pre-tokenizer + processor) so post-load behavior matches pre-save behavior.
+
+This restores both token-alignment correctness and artifact reproducibility.
+
+### Post-fix verification (`task15after.py`)
+
+To verify the fixes, we added and ran:
+
+```bash
+uv run python tasks/task15after.py
+```
+
+![Task 15 after revamp results](tasks/task15after.png)
+
+Post-fix report:
+
+`outputs/task15after/report.json`
+
+Observed post-fix output:
+
+- Offsets check:
+  - `pass: True`
+  - `offsets_identical: False`
+  - sample offsets: `[(0, 1), (1, 3), (3, 5), (5, 6), (6, 8), (8, 9)]`
+- Save/load check:
+  - `pass: True`
+  - `behavior_changed: False`
+  - before: `tokens=['hello', 'world'] ids=[5, 13]`
+  - after : `tokens=['hello', 'world'] ids=[5, 13]`
+
+### Clear before vs after differences
+
+| Check | Before fix | After fix |
+|---|---|---|
+| Piece offsets for subword tokenization | All offsets identical full-span (`(0, 20)`) | Piece-level spans (incremental offsets) |
+| Save/load encode parity | Drift (`['hello','world'] -> ['<unk>']`) | Stable (`['hello','world']` both before/after) |
+
+Conclusion: both identified Task 15 bugs are fixed and validated with reproducible scripts.
+
+
+---
+## Task 13
+Okay so im gonna try to remove the exoctic whitespace normalization from the normalizer and see what happens. 
+What im predicting is that a few tokenisations tests are going fail so the inheritly when those exoctic charecters are encountered a white space should show but now that it wont show, ther will be tests that fail
+
+Also i think there will be a direct increase in the number of tokens, especially Unowkn tokens
+
+unchanged 
+![alt text](image-1.png)
+
+modified:
+![alt text](image.png)
+
+SO after running the results have been pretty suprising, only one test failed and that was the normalizer integration test, all the other tokenisation tests passed perfectly, 
+Now to me this is suprising is because, the thought process was that, the tokens are gonna start to look all weird and messed up but somehow it didnt
+
+So to conclude from this I can say that hidden in our codebase is a secret **Redundancy** and this has some how made it give us a sane response.
+
 ## Task 14
 
 ### How difficult is adding a fourth model?
