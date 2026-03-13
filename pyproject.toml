@@ -54,9 +54,9 @@ all = ["abctokz[adapters,dev]"]
 abctokz = "abctokz.cli.main:app"
 
 [project.urls]
-Homepage = "https://github.com/example/abctokz"
-Documentation = "https://github.com/example/abctokz/docs"
-Repository = "https://github.com/example/abctokz"
+Homepage = "https://github.com/aezyus/abctokz"
+Documentation = "https://github.com/aezyus/abctokz/docs"
+Repository = "https://github.com/aezyus/abctokz"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/abctokz"]
