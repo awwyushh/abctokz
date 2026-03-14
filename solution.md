@@ -6,6 +6,12 @@
 
 **Total Tokens Used:** 51,402
 
+## AI Tools / Models Used
+- Gemini 3.1 Pro
+- GPT 4o
+- ChatGPT 5
+
+
 ## Introduction
 
 This is the solution file for `TASKS.md`.
@@ -270,6 +276,37 @@ The same two texts were tested with `tiktoken` (`cl100k_base`):
 This reveals a key practical point: **fertility is highly tokenizer-dependent**. A domain/script-aware tokenizer trained on relevant data can be much more token-efficient for that script than a generic external tokenizer.
 
 Report saved at: `outputs/task3/report.json`
+---
+
+## Task 4
+
+### How Does a Config Become a Tokenizer?
+
+The library uses Pydantic config objects to define every aspect of a tokenizer.
+
+### 1. Where do default values come from?
+Default values for the pipeline stages come primarily from `src/abctokz/config/defaults.py` and are inherited by the Pydantic schemas in `src/abctokz/config/schemas.py`.
+For instance, `vocab_size` defaults to the constants `DEFAULT_VOCAB_SIZE`, `BPE_DEFAULT_VOCAB_SIZE`, or `UNIGRAM_DEFAULT_VOCAB_SIZE` defined in the codebase, and `unk_token` defaults to `"<unk>"`.
+
+### 2. Validation and Failure Modes
+Validation natively happens through Pydantic's `@model_validator` in `TokenizerConfig` and field constraints (like `extra="forbid"` and `ge=1`).
+
+**Failure Mode 1: Mismatched Model and Trainer**
+If you pass `model_type='bpe'` but `trainer_type='unigram'`, Pydantic triggers the `check_trainer_model_alignment` validator and throws:
+`ValueError: Model type 'bpe' and trainer type 'unigram' must match.`
+
+**Failure Mode 2: Invalid Config Value**
+If you pass passing a negative vocabulary size (e.g. `vocab_size=-5`), Pydantic's `ge=1` restriction catches it:
+`Input should be greater than or equal to 1`.
+
+### 3. Tracing Construction Step-by-Step
+1. **Config Definition**: The config is parsed from dict into a validated `TokenizerConfig` Pydantic model.
+2. **Factory Dispatch**: `Tokenizer.from_config(config)` is invoked.
+3. **Normalizer & Pre-tokenizer Build**: `build_normalizer()` and `build_pretokenizer()` convert the config parts into instances (e.g., `DevanagariNormalizer`, `WhitespacePreTokenizer`).
+4. **Shell Tokenizer**: The pipeline is pieced together without a trained model (using `_PlaceholderModel()` initially).
+5. **Trainer Execution**: When `train()` is called, `build_trainer()` inspects the trainer config and creates the appropriate component (e.g. `BPETrainer`), which learns the vocabulary string by string.
+6. **Finalization**. `train()` assigns the newly trained `Model` in place of the placeholder, creating a working `Tokenizer`.
+
 ---
 
 ## Task 5 — Is It Truly Deterministic?
@@ -726,6 +763,41 @@ The script builds a small BPE artifact, then calls `BenchmarkRunner.run()` twice
 **What I’d change:** (1) Optionally report timing as median and IQR (or min/max) over the existing `timed_runs` instead of just the mean. (2) If we care about stability of token metrics, run the full benchmark N times with the same config and confirm fertility/unk_rate/round_trip are identical across those N runs—that would make the “trust” story explicit in CI.
 
 Report path: `outputs/task11/report.json`
+
+---
+## Task 12
+
+### Where the Design Lies to You
+
+### The intended design
+The architectural promise is that the Decoding pipeline is exactly `ids -> id_to_token -> decoder -> string`. Furthermore, the existence of the `PostProcessor` suggests that special tokens are systematically managed by dedicated components (namely added by `PostProcessor` and theoretically handled by `Decoder` or `PostProcessor` in reverse).
+
+### What the code actually does
+Instead of letting the `Decoder` or `PostProcessor` properly manage strings, the base `Tokenizer.decode()` method contains a brittle, hardcoded heuristic to handle special tokens:
+```python
+if skip_special_tokens:
+    special_strs = set(self._special_tokens.keys())
+    tokens = [
+        t for t in tokens
+        if t and not (t in special_strs or (t.startswith("<") and t.endswith(">")))
+    ]
+```
+It arbitrarily strips *any* token matching `<...>` (e.g., HTML/XML tags) assuming it must be a special token, effectively destroying valid user data inside angular brackets during decode without warning.
+
+### A concrete example
+Suppose you trained a `WordLevel` model where `"<p>"` and `"</p>"` and `"hello"` are normal, standard words in the vocabulary (ID 0, 1, 2 respectively). 
+If you encode `"<p> hello </p>"`, you get `[0, 1, 2]`. 
+If you invoke `tokenizer.decode([0, 1, 2], skip_special_tokens=True)`, the regex-like heuristic forcibly strips `"<p>"` and `"</p>"`, leaving the decoded string as just `"hello"`.
+
+### How serious is it?
+It is **quite serious** for domains dealing with HTML, code, markup, or math, where bracketed symbols are completely normal semantics. It violates the "lossless relative to normalizer" contract.
+
+### Minimal fix
+The `Tokenizer.decode()` method should *only* check against the registered `self._special_tokens.keys()`, removing the hardcoded `t.startswith("<") and t.endswith(">")` check:
+```diff
+- if t and not (t in special_strs or (t.startswith("<") and t.endswith(">")))
++ if t and t not in special_strs
+```
 
 ---
 ## Task 13
@@ -1221,3 +1293,20 @@ This is the cleanest high-level difference among the three families. WordLevel s
 The main lesson from this experiment is that the three models are not just different algorithms; they express different beliefs about language. **WordLevel** believes words should remain words. **BPE** believes reusable fragments are the right building blocks. **Unigram** believes tokenization should be the most probable explanation from a flexible inventory of pieces. In practice, this means WordLevel gives the cleanest boundaries, BPE gives the strongest compositional behavior, and Unigram gives the best overall balance between memorization and generalization.
 
 ---
+
+## Task 20
+
+### Explaining Tokenization
+
+Imagine you're trying to teach a toddler how to read, but the child doesn’t know what a word or even the alphabet is. You need a way to break writing down into smaller, recognizable puzzle pieces.
+
+That is exactly the job of **tokenization** in AI: it’s the bridge between human language and the "math representations" (numbers) the AI can compute. If we simply broke text by spaces or punctuation, like a basic `text.split()`, the system's dictionary would become impossibly huge. For example, "skipping," "skipped," and "skips" would look altogether unrelated. Furthermore, what about languages like Chinese or Japanese that do not traditionally use spaces? What about Hindi or Marathi, where letters frequently combine and fuse together into conjuncts depending on context?
+
+To solve this, modern tokenizers use an iterative compression trick. They scan large amounts of text to find frequent patterns, starting from individual letters up to full words. "The" gets assigned its own puzzle piece because it’s so common, but an uncommon string like "internationalization" might be cut into `inter`, `national`, and `ization`. This lets the AI guess meanings from smaller, understandable chunks, even when seeing a brand-new, never-seen-before word.
+
+Multilingual tokenization proves especially hard because scripts behave differently. For instance, in Devanagari script (used by Hindi), if you split the invisible characters that tell the computer to fuse letters together (called zero-width joiners), the final output isn't simply "cut in half" — the letters literally change shape on screen and ruin the meaning.
+
+Ultimately, a tokenizer is an AI's carefully balanced alphabet: built granularly enough to read anything, but chunked enough to read fast.
+
+
+
