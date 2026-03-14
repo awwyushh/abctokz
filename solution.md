@@ -62,7 +62,7 @@ The training corpus contained a **mix of Hindi, English, and Marathi text**.
 
 After running the script, the tokenizer produced **approximately 76 tokens** for the input example.
 
-<img width="1014" height="191" alt="Tokenization output" src="https://github.com/user-attachments/assets/c5a697a9-c322-4ca8-b519-773ff1b8884a" />
+<img width="1014" height="191" alt="Tokenization output" src="tasks/task1.png" />
 
 ### Tokenization Pipeline
 
